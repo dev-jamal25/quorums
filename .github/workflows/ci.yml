@@ -1,11 +1,29 @@
-# CI gates — run on every push and pull request. All checks run on mocks only
-# (no live Meta / Gemini / embeddings keys or network).
+# CI gates. Runs on every pull request and on pushes to feature branches.
+# Everything runs ENTIRELY on mocks — no live Meta / Gemini / embeddings / Anthropic
+# keys and no live network. Integration tests spin their own Postgres via
+# Testcontainers (Docker is preinstalled on ubuntu-latest); no service container needed.
 name: ci
-on: [push, pull_request]
+
+on:
+  pull_request:
+  push:
+    branches:
+      - 'feature/**'
+      - 'feat/**'
 
 jobs:
+  # STABLE job name — select "build-test" as the required status check in the
+  # branch ruleset. Do not rename or matrix-ize this job (it would change the
+  # check context and silently drop the gate).
   build-test:
+    name: build-test
     runs-on: ubuntu-latest
+    env:
+      # Force the mock/dev path so no step can reach a live dependency.
+      Meta__Mode: mock
+      Vault__Enabled: "false"
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
     defaults:
       run:
         working-directory: backend
@@ -18,14 +36,15 @@ jobs:
         run: dotnet restore
       - name: Format check
         run: dotnet format --verify-no-changes
-      - name: Build (analyzers + warnings-as-errors)
+      - name: Build (Roslyn analyzers + warnings-as-errors)
         run: dotnet build --no-restore -c Release
-      - name: Test
+      - name: Test (mocks + Testcontainers Postgres)
         run: dotnet test --no-build -c Release
       - name: Vulnerability scan
         run: dotnet list package --vulnerable --include-transitive
 
   secret-scan:
+    name: secret-scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
