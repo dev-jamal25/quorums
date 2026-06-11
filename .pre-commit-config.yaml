@@ -1,0 +1,15 @@
+# Pre-commit hooks mirror the CI gates locally (see .github/workflows/ci.yml).
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: dotnet-format
+        name: dotnet format
+        entry: dotnet format backend/Backend.sln --verify-no-changes
+        language: system
+        pass_filenames: false
+        types: [c#]

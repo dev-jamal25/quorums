@@ -1,0 +1,68 @@
+// boundary-interface.cs.template
+//
+// The canonical pattern for the six boundary interfaces (the swappable spine).
+// Interface declared in Core; implementations in Infrastructure; registered in
+// Program.cs with an explicit lifetime; selected (live vs mock) via configuration
+// so CI runs entirely on mocks. Constructor injection only.
+//
+// Replace IExample / ExampleResult / Live + Mock impls with the real boundary, e.g.
+//   IMediaGenerationTool : GeminiMediaTool / MockMediaTool
+//   IMetaIntegration     : LiveMetaIntegration / MockMetaIntegration
+//   IStorageService      : MinioStorage / LocalStorage
+//   IRetrievalService    : PgVectorRetrieval
+//   ISecretsProvider     : VaultProvider / EnvProvider
+//   IEmbeddingProvider   : NomicEmbeddingProvider / mock
+
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Core.Abstractions; // -> Core project
+
+public interface IExample
+{
+    Task<ExampleResult> DoAsync(ExampleRequest request, CancellationToken ct = default);
+}
+
+public sealed record ExampleRequest(/* typed, validated inputs */);
+public sealed record ExampleResult(/* typed outputs */);
+
+// ---------------------------------------------------------------------------
+// Infrastructure project: live implementation. Uses IHttpClientFactory for HTTP,
+// timeouts + retries (Polly) on external calls, and returns a structured ToolError
+// into the loop on recoverable failure instead of throwing (degrade, don't crash).
+// ---------------------------------------------------------------------------
+namespace Infrastructure.Integrations; // -> Infrastructure project
+
+public sealed class ExampleLive : Core.Abstractions.IExample
+{
+    public Task<Core.Abstractions.ExampleResult> DoAsync(
+        Core.Abstractions.ExampleRequest request,
+        System.Threading.CancellationToken ct = default)
+    {
+        // call the real dependency; provider keys come from Options (Vault KV),
+        // never inline.
+        throw new System.NotImplementedException();
+    }
+}
+
+public sealed class ExampleMock : Core.Abstractions.IExample
+{
+    public Task<Core.Abstractions.ExampleResult> DoAsync(
+        Core.Abstractions.ExampleRequest request,
+        System.Threading.CancellationToken ct = default)
+        => Task.FromResult(new Core.Abstractions.ExampleResult(/* realistic canned values */));
+}
+
+// ---------------------------------------------------------------------------
+// Program.cs (Api and Worker share this registration via an extension method in
+// Infrastructure). Lifetimes: Singleton for clients/models, Scoped for per-request
+// (IBrandContext, DbContext), Transient otherwise.
+// ---------------------------------------------------------------------------
+//
+// public static IServiceCollection AddExampleBoundary(this IServiceCollection s, IConfiguration cfg)
+// {
+//     var useMock = cfg.GetValue<bool>("Example:UseMock"); // true in CI
+//     if (useMock) s.AddSingleton<IExample, ExampleMock>();
+//     else         s.AddSingleton<IExample, ExampleLive>();
+//     return s;
+// }

@@ -1,0 +1,10 @@
+# Context root is ./frontend. Keep node_modules/build output and secrets out.
+.git
+.gitignore
+.env
+.env.*
+node_modules
+.next
+out
+npm-debug.log*
+*.md

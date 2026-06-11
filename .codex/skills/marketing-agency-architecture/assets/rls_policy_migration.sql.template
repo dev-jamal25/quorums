@@ -1,0 +1,35 @@
+-- rls_policy_migration.sql.template
+--
+-- The RLS enable + policy pattern to embed in an EF Core migration via
+-- migrationBuilder.Sql(...). One block per brand-scoped table. Isolation is
+-- VERSIONED SCHEMA (DL-007), not a manual step.
+--
+-- Substitute {table} with each brand-scoped table (snake_case as mapped by EF):
+--   brand_profile, knowledge_doc, knowledge_chunk, agent_run, run_checkpoint,
+--   content_item, asset, approval_action, brand_meta_connection, eval_record
+--
+-- The `brand` table is the scope itself and gets NO policy.
+-- Hangfire tables live in their own schema and are NOT touched here.
+
+-- 1) Enable RLS on the table.
+ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;
+
+-- 2) FORCE so the table owner (the app's DB role) is ALSO bound by the policy.
+--    Without FORCE, an owner role can bypass RLS — defeating the guarantee.
+ALTER TABLE {table} FORCE ROW LEVEL SECURITY;
+
+-- 3) The policy: a row is visible/affected only when its brand_id equals the
+--    session variable set by the EF DbConnectionInterceptor.
+CREATE POLICY {table}_brand_isolation ON {table}
+    USING (brand_id = current_setting('app.current_brand')::uuid)
+    WITH CHECK (brand_id = current_setting('app.current_brand')::uuid);
+
+-- The session variable is set per connection by:
+--   SELECT set_config('app.current_brand', @brandId, true);
+-- The THIRD argument MUST be true (transaction-scoped) — connection-pool-safe and
+-- resets at commit. Using false (session-scoped) bleeds the brand across pooled
+-- connections and is a cross-brand leakage bug.
+--
+-- Down migration: DROP POLICY {table}_brand_isolation ON {table};
+--                 ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY;
+--                 ALTER TABLE {table} DISABLE ROW LEVEL SECURITY;

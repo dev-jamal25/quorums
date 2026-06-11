@@ -1,0 +1,68 @@
+# docker-compose.skeleton.yml
+#
+# Eight-service skeleton derived from the FROZEN architecture (DL-015, DL-016).
+# Service names, images, and dependency order are fixed by the architecture; ports,
+# volumes, env wiring, and healthchecks are filled in during Day 1. Do NOT add,
+# remove, merge, or rename services. Redis is IDistributedCache ONLY — it is NOT the
+# queue broker (the queue/job store is Hangfire on Postgres).
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # ASP.NET Core Web API. HTTP surface: brands, knowledge CMS, runs, approvals, assets.
+    depends_on: [postgres, redis, minio, vault, embeddings]
+    # ports: ["8080:8080"]
+    # environment / env_file: Vault address, Postgres conn, MinIO creds, Redis URL...
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # .NET Worker Service hosting the Hangfire server. Executes ExecuteRun/ResumeRun.
+    # Built from the SAME publish output as api (zero version skew).
+    depends_on: [postgres, redis, minio, vault, embeddings]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    # Next.js (React, TypeScript): onboarding, analytics, approvals, run/trace viewer.
+    depends_on: [api]
+    # ports: ["3000:3000"]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    # Relational data + RLS isolation + pgvector embeddings + Hangfire job store
+    # (separate schema) + run checkpoints.
+    # volumes: [pgdata:/var/lib/postgresql/data]
+    # environment: POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
+
+  redis:
+    image: redis:7
+    # IDistributedCache (caching layer) ONLY. NOT the queue broker.
+
+  minio:
+    image: minio/minio
+    # Object storage for generated media, brand-prefixed: brands/{brand_id}/assets/{asset_id}
+    # command: server /data --console-address ":9001"
+    # volumes: [miniodata:/data]
+
+  vault:
+    image: hashicorp/vault
+    # Dev mode for the demo. KV: app secrets. Transit: per-brand token encryption
+    # (transit/keys/brand-tokens). Hardening path documented; dev mode stated openly.
+    # cap_add: [IPC_LOCK]
+
+  embeddings:
+    image: ollama/ollama
+    # Local model server for nomic-embed-text-v1.5 over HTTP (DL-016). Self-hosted,
+    # open-source. Must be healthy before ingest/retrieval. (HF Text-Embeddings-
+    # Inference is the documented alternative if a reranker is later co-hosted.)
+    # volumes: [ollamadata:/root/.ollama]
+
+# volumes:
+#   pgdata:
+#   miniodata:
+#   ollamadata:

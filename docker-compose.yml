@@ -1,0 +1,130 @@
+# Eight-service topology (DL-015, DL-016). Demo target: `docker compose up`.
+# Service set is FROZEN — do not add, remove, merge, or rename services.
+# Redis is IDistributedCache ONLY (not the queue broker); the queue/job store is
+# Hangfire on Postgres. Config values are supplied via .env (see .env.example);
+# no real secrets are committed.
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # ASP.NET Core Web API. HTTP surface: brands, knowledge CMS, runs, approvals, assets.
+    env_file: [.env]
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      vault:
+        condition: service_started
+      embeddings:
+        condition: service_started
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # .NET Worker Service hosting the Hangfire server. Same publish output as api
+    # (zero version skew); overrides the entrypoint to run the worker assembly.
+    command: ["dotnet", "Backend.Worker.dll"]
+    env_file: [.env]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      vault:
+        condition: service_started
+      embeddings:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    # Next.js dashboard: onboarding, analytics, approvals, run/trace viewer.
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost:8080"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    # Relational data + RLS isolation + pgvector embeddings + Hangfire job store
+    # (separate schema) + run checkpoints.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    # IDistributedCache (caching) ONLY. NOT the queue broker.
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    # Object storage for generated media, brand-prefixed: brands/{brand_id}/assets/{asset_id}
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  vault:
+    image: hashicorp/vault
+    # Dev mode for the demo. KV: app secrets. Transit: per-brand token encryption
+    # (transit/keys/brand-tokens). Hardening path documented; dev mode stated openly.
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    ports:
+      - "8200:8200"
+
+  embeddings:
+    image: ollama/ollama
+    # Local model server for nomic-embed-text-v1.5 over HTTP (DL-016). Self-hosted,
+    # open-source. Must be healthy before ingest/retrieval.
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+
+volumes:
+  pgdata:
+  miniodata:
+  ollamadata:

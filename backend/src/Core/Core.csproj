@@ -1,0 +1,10 @@
+<!-- Core: domain layer — entities, value objects, boundary interfaces, agent
+     contracts. No infrastructure dependencies. (Scaffold: no types yet.) -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Backend.Core</RootNamespace>
+    <AssemblyName>Backend.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>

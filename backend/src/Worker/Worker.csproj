@@ -1,0 +1,16 @@
+<!-- Worker: .NET Worker Service hosting the Hangfire server (ExecuteRun/ResumeRun
+     job execution). References Core + Infrastructure. Built into the SAME publish
+     output as Api (zero API<->worker skew). -->
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <RootNamespace>Backend.Worker</RootNamespace>
+    <AssemblyName>Backend.Worker</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

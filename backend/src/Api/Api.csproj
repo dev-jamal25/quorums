@@ -1,0 +1,16 @@
+<!-- Api: ASP.NET Core Web API — HTTP surface (controllers, DTOs, DI wiring,
+     Hangfire client). References Core + Infrastructure. Built into the SAME
+     publish output as Worker (zero API<->worker skew). -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Backend.Api</RootNamespace>
+    <AssemblyName>Backend.Api</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

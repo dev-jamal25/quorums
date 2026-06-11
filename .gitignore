@@ -1,0 +1,34 @@
+# --- secrets & local config (never commit real values) ---
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+*.pem
+*.key
+
+# --- .NET build output ---
+bin/
+obj/
+*.user
+publish/
+artifacts/
+
+# --- test output ---
+TestResults/
+coverage*.xml
+*.trx
+
+# --- frontend (Next.js / Node) ---
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# --- IDE / OS ---
+.vs/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
