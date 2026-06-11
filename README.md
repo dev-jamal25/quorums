@@ -34,6 +34,19 @@ docker compose up
 
 <!-- TODO: first-run notes (migrations, MinIO bucket, Ollama model pull, Vault init). -->
 
+## Pre-commit hooks
+
+Install the hooks once per clone to run **gitleaks** and **`dotnet format`** on
+staged changes before each commit (mirrors the CI gates). Requires the .NET SDK
+on `PATH` for the format hook.
+
+```bash
+pip install pre-commit   # or: pipx install pre-commit / brew install pre-commit
+pre-commit install
+```
+
+The same checks run in CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+
 ## Configuration
 
 All config keys are documented by name (no values) in
