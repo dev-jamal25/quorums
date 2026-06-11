@@ -82,6 +82,12 @@ public static class HealthCheckRegistration
             ResponseWriter = WriteAggregatedResponseAsync,
         });
 
+        endpoints.MapHealthChecks("/health/ready", new HealthCheckOptions
+        {
+            Predicate = registration => registration.Tags.Contains(ReadyTag),
+            ResponseWriter = WriteAggregatedResponseAsync,
+        });
+
         return endpoints;
     }
 
