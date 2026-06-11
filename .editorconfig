@@ -22,6 +22,15 @@ dotnet_style_qualification_for_method = false:warning
 csharp_prefer_braces = true:warning
 dotnet_sort_system_directives_first = true
 
+# Constants are PascalCase. Declared before the private-field rule so it takes
+# precedence — const fields must not get the _camelCase prefix.
+dotnet_naming_rule.constants_pascal.severity = warning
+dotnet_naming_rule.constants_pascal.symbols = constant_fields
+dotnet_naming_rule.constants_pascal.style = pascal_case_style
+dotnet_naming_symbols.constant_fields.applicable_kinds = field
+dotnet_naming_symbols.constant_fields.required_modifiers = const
+dotnet_naming_style.pascal_case_style.capitalization = pascal_case
+
 # Naming: private fields are _camelCase
 dotnet_naming_rule.private_fields_underscore.severity = warning
 dotnet_naming_rule.private_fields_underscore.symbols = private_fields

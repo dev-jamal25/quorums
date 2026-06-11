@@ -6,6 +6,9 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Pin transitive packages too, so a patched version overrides a vulnerable
+         one pulled in indirectly (e.g. Npgsql via the health-check package). -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
   <!-- Runtime dependencies (referenced by Api / Worker / Infrastructure). -->
@@ -17,7 +20,11 @@
     <PackageVersion Include="Polly.Extensions.Http" Version="3.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.2" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.2" />
+    <!-- Pinned directly to override the vulnerable 8.0.0 brought in transitively
+         by AspNetCore.HealthChecks.NpgSql (NU1903 / GHSA-x9vc-6hfv-hg8c). -->
+    <PackageVersion Include="Npgsql" Version="9.0.2" />
     <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.2.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
     <PackageVersion Include="Hangfire.AspNetCore" Version="1.8.14" />
     <PackageVersion Include="Hangfire.PostgreSql" Version="1.20.10" />
     <PackageVersion Include="VaultSharp" Version="1.17.5.1" />
