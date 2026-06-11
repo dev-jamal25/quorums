@@ -1,0 +1,22 @@
+<!-- Infrastructure: EF Core DbContext + Migrations (incl. RLS SQL), Vault, MinIO,
+     Meta/Media integrations, retrieval, embeddings. References Core only.
+     (Scaffold: no implementations yet; package refs added as each seam is wired.) -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Backend.Infrastructure</RootNamespace>
+    <AssemblyName>Backend.Infrastructure</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="VaultSharp" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Core.csproj" />
+  </ItemGroup>
+
+</Project>

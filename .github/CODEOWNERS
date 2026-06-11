@@ -1,0 +1,3 @@
+# Code review ownership. The last matching pattern takes precedence.
+# @dev-jamal25 owns the entire repository — required reviewer on every PR.
+* @dev-jamal25

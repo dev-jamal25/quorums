@@ -1,0 +1,64 @@
+{
+  "_comment": "appsettings.Example.json.template — documents EVERY config key with NO real secrets (DL-011). Copy to appsettings.json / set env vars for dev; in prod, KV-backed values come from Vault via VaultSharp and bind into the Options pattern (IOptions<T>, ValidateOnStart). Required keys must fail at startup if missing.",
+
+  "DotNet": {
+    "TargetFramework": "net10.0 (default LTS; switch to net8.0 only on architect instruction)"
+  },
+
+  "ConnectionStrings": {
+    "Postgres": "Host=postgres;Port=5432;Database=agency;Username=__SET_ME__;Password=__SET_ME__"
+  },
+
+  "Vault": {
+    "Address": "http://vault:8200",
+    "DevMode": true,
+    "KvMount": "secret",
+    "TransitMount": "transit",
+    "TransitKeyName": "brand-tokens"
+  },
+
+  "Anthropic": {
+    "ApiKey": "__FROM_VAULT_KV__"
+  },
+
+  "Gemini": {
+    "ApiKey": "__FROM_VAULT_KV__",
+    "BaseUrl": "__SET_ME__"
+  },
+
+  "Minio": {
+    "Endpoint": "minio:9000",
+    "AccessKey": "__FROM_VAULT_KV__",
+    "SecretKey": "__FROM_VAULT_KV__",
+    "Bucket": "media",
+    "_keyScheme": "brands/{brand_id}/assets/{asset_id}"
+  },
+
+  "Redis": {
+    "Configuration": "redis:6379",
+    "_role": "IDistributedCache only — NOT the queue broker"
+  },
+
+  "Hangfire": {
+    "Schema": "hangfire",
+    "_store": "PostgreSQL (separate schema; holds no brand data)"
+  },
+
+  "Embeddings": {
+    "BaseUrl": "http://embeddings:11434",
+    "Model": "nomic-embed-text-v1.5",
+    "Dimension": 768,
+    "_dimensionRule": "MUST equal the pgvector column dimension set in the EF migration",
+    "_prefixes": "search_document: on ingest, search_query: on queries (mandatory)",
+    "_distance": "cosine (vector_cosine_ops); normalize embeddings"
+  },
+
+  "Meta": {
+    "Mode": "mock",
+    "_modes": "mock (default, demo runs with zero live Meta) | live (optional bonus, paid actions human-gated)"
+  },
+
+  "Logging": {
+    "_note": "structured logging; never log secrets, tokens, or decrypted Meta tokens"
+  }
+}
