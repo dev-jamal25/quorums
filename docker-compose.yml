@@ -26,6 +26,11 @@ services:
         condition: service_healthy
       vault:
         condition: service_started
+      # Optional: only waits when --profile embeddings is active; skipped on
+      # the default host-Ollama path (required: false).
+      ollama-init:
+        condition: service_completed_successfully
+        required: false
 
   worker:
     build:
@@ -48,6 +53,9 @@ services:
         condition: service_healthy
       vault:
         condition: service_started
+      ollama-init:
+        condition: service_completed_successfully
+        required: false
 
   frontend:
     build:
@@ -127,10 +135,32 @@ services:
     image: ollama/ollama
     # Local model server for nomic-embed-text-v1.5 over HTTP (DL-016). Self-hosted,
     # open-source. Opt-in via `docker compose --profile embeddings up`; default run
-    # uses host-installed Ollama at EMBEDDINGS_URL=http://host.docker.internal:11434.
+    # uses host-installed Ollama at Embeddings__BaseUrl=http://host.docker.internal:11434.
     profiles: ["embeddings"]
     ports:
       - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  ollama-init:
+    image: ollama/ollama
+    # One-shot that pulls nomic-embed-text:v1.5 into the shared ollamadata volume.
+    # Runs only with the embeddings profile. api and worker declare an optional
+    # depends_on so they wait for the model to be ready when the profile is active,
+    # but skip the wait entirely on the default host-Ollama path.
+    profiles: ["embeddings"]
+    environment:
+      OLLAMA_HOST: http://embeddings:11434
+    command: pull nomic-embed-text:v1.5
+    depends_on:
+      embeddings:
+        condition: service_healthy
     volumes:
       - ollamadata:/root/.ollama
 
