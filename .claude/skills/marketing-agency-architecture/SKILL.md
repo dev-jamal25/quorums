@@ -194,6 +194,105 @@ detail in `references/build-order.md`.
 - `assets/appsettings.Example.json.template` — documents every config key (no real
   secrets), the Options-pattern source.
 
+## Scaffold hardening — known-good patterns (2026-06-13)
+
+These were verified against live Docker Desktop / WSL2 failures; follow them
+exactly to avoid the same issues on a fresh clone.
+
+### Vault compose service (exact snippet)
+
+```yaml
+vault:
+  image: hashicorp/vault
+  cap_add: [IPC_LOCK]          # mlock where the kernel allows it
+  command: server -dev          # explicit dev-mode start
+  environment:
+    VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+    VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    SKIP_SETCAP: "true"         # Docker Desktop / WSL2 escape hatch (no CAP_SETFCAP)
+  ports:
+    - "8200:8200"
+```
+
+### Env value convention — host:port only, no scheme
+
+`*__Endpoint` and `*__Address` config values **store `host:port` only** — no
+`http://` prefix. The application is the sole owner of the scheme prefix.
+Breaking this rule produces double-schemed URLs (`http://http://...`).
+
+```
+Minio__Endpoint=minio:9000          # ✅  host:port only
+Vault__Address=vault:8200           # ✅  host:port only
+Minio__Endpoint=http://minio:9000   # ❌  never include scheme in config
+```
+
+The health-check registration and `VaultConfigurationExtensions` both prepend
+`http://` at usage time — never store the scheme in config.
+
+### Health checks — optional deps gated on their feature flag
+
+Register a dependency health check **only when the dependency is actually used**:
+
+```csharp
+if (configuration.GetValue<bool>("Vault:Enabled", false))
+{
+    builder.AddUrlGroup(vaultHealthUri, name: "vault", tags: [ReadyTag]);
+}
+```
+
+A disabled Vault (or other optional dep) must not cause `/health` to report
+`Unhealthy`. Apply the same if-block pattern to any future optional dependency.
+
+### Ollama — named-volume + one-shot init + conditional gate
+
+```yaml
+embeddings:
+  image: ollama/ollama
+  profiles: ["embeddings"]
+  volumes:
+    - ollamadata:/root/.ollama
+  healthcheck:
+    test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+    start_period: 10s
+
+ollama-init:
+  image: ollama/ollama
+  profiles: ["embeddings"]
+  environment:
+    OLLAMA_HOST: http://embeddings:11434
+  command: pull nomic-embed-text:v1.5
+  depends_on:
+    embeddings:
+      condition: service_healthy
+  volumes:
+    - ollamadata:/root/.ollama
+```
+
+Api and worker declare an **optional** dependency so they wait when the profile
+is active but skip the wait on the default host-Ollama path:
+
+```yaml
+api:
+  depends_on:
+    ollama-init:
+      condition: service_completed_successfully
+      required: false   # silently skipped when profile is not active
+```
+
+Default path (host-Ollama): `Embeddings__BaseUrl=http://host.docker.internal:11434`
+Reproducible path: `docker compose --profile embeddings up`
+
+### Frontend Dockerfile — public/ must exist
+
+`frontend/public/` must exist in the source tree; the Dockerfile COPY fails
+silently or errors if the directory is absent. Commit `frontend/public/.gitkeep`
+so the directory is always present.
+
+---
+
 ## Common pitfalls (fail the review if violated)
 
 - **Session-scoped `set_config` instead of transaction-scoped** → pool bleed
@@ -211,6 +310,13 @@ detail in `references/build-order.md`.
 - **A brand-scoped entity without an RLS policy** → every domain entity except
   `Brand` carries `brand_id` and a policy; a table without one must be justified
   in its migration.
+- **Scheme in a `*__Endpoint` or `*__Address` config value** → double-schemed URL.
+  Store host:port only; the application owns the `http://` prefix.
+- **Vault health check always registered** → `/health` returns Unhealthy in the
+  default dev setup where Vault is disabled. Gate the check on `Vault:Enabled`.
+- **Ollama model not pulled before app starts** → embedding requests fail at
+  startup. Use the `ollama-init` one-shot with `service_completed_successfully`
+  when running with the embeddings profile.
 
 ## Example: implementing the RLS isolation layer (Day 2)
 
