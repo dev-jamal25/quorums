@@ -60,3 +60,36 @@ State the verification method, then **actually run it and read the output.** No 
 7. **Migrations:** schema change ships as a new EF migration with the RLS policy for any brand-scoped table; `docker compose up` applies cleanly from an empty volume.
 
 **Done = every applicable box green.** A task that compiles but skips the isolation or resume check is **NOT** done.
+
+## Scaffold Hardening — known-good patterns (feat/brand-onboarding, 2026-06-13)
+
+Six defects fixed during onboarding; document them here so a fresh clone never replays them.
+
+**Vault config binding** — use `configuration.GetValue<bool>("Vault:Enabled", false)` (tolerates missing key and empty string). `GetSection().Get<VaultOptions>()` throws on an invalid bool string. Exact fix: `Infrastructure/Configuration/VaultConfigurationExtensions.cs`.
+
+**Host:port convention** — `*__Address` / `*__Endpoint` values store `host:port` ONLY (no `http://`). The application prepends `http://` at registration time. Both `VaultConfigurationExtensions` and `HealthCheckRegistration` prepend the scheme; the `.env` / `docker-compose.yml` environment blocks never include it.
+
+**Vault health check must be feature-gated** — register the Vault URL-group check only when `configuration.GetValue<bool>("Vault:Enabled", false)` is true, so `Vault:Enabled=false` never causes `/health` to report Unhealthy. Exact fix: `Api/HealthChecks/HealthCheckRegistration.cs`.
+
+**Vault compose service** — add `command: server -dev` and `SKIP_SETCAP: "true"` to suppress the CAP\_SETFCAP error on Docker Desktop / WSL2. `cap_add: [IPC_LOCK]` stays.
+
+**Ollama init pattern** — pull the model via a one-shot `ollama-init` service (`profiles: ["embeddings"]`, `command: pull nomic-embed-text:v1.5`, `depends_on: embeddings: condition: service_healthy`). `api` and `worker` declare `ollama-init: condition: service_completed_successfully` with `required: false` so the wait is active only when the profile is on.
+
+**Dockerfile ENTRYPOINT split** — `ENTRYPOINT ["dotnet"]` + `CMD ["Backend.Api.dll"]`. The worker compose service uses `command: ["Backend.Worker.dll"]`, which overrides only `CMD`. If `ENTRYPOINT` carries the assembly name, compose `command` appends instead of replacing and the worker silently runs the API binary — jobs stay Queued forever.
+
+**EF migrations on a fresh volume** — `docker compose up` does NOT auto-migrate. After `docker compose down -v`, run:
+```
+dotnet ef database update -p src/Infrastructure -s src/Api --connection "Host=localhost;Port=5432;Database=quorums;Username=postgres;Password=postgres"
+```
+`AppDbContextDesignTimeFactory` uses a design-time placeholder connection; always supply `--connection` for the live DB.
+
+**Hangfire schema race** — both Api and Worker call `AddHangfireJobStore`, which runs `CREATE SCHEMA "hangfire"` at startup. On a clean volume they race; the loser crashes with `duplicate key violates unique constraint "pg_namespace_nspname_index"`. Mitigation: add `restart: unless-stopped` to both services so the loser auto-recovers after the winner creates the schema. Long-term fix: run `PostgreSqlObjectsInstaller` only in the Worker.
+
+**Smoke test evidence (2026-06-13, feat/brand-onboarding commit 5512e55)**
+- `POST /brands` → 200, `brandId`
+- `POST /runs` (X-Brand-Id header) → 202, `runId`
+- Worker: `ExecuteRunJob` ran; `UPDATE agent_runs SET status`, `INSERT INTO run_checkpoints` logged
+- `GET /runs/{id}` → `status=2` (AwaitingApproval)
+- `POST /runs/{id}/approval {"decision":"approve"}` → `GET` → `status=3` (Publishing) → `status=4` (Done)
+- Second run: reject path → `status=6` (Rejected), no `ResumeRun` enqueued, phase unchanged
+- `/health` → Healthy (postgres, redis, minio, embeddings, self — Vault absent because disabled)
