@@ -12,6 +12,9 @@
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
     <PackageReference Include="AspNetCore.HealthChecks.Redis" />
     <PackageReference Include="AspNetCore.HealthChecks.Uris" />
+    <!-- Required by the EF Core tools because Api is the migrations startup project.
+         Dev-only (PrivateAssets=all) — not part of the shipped output. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

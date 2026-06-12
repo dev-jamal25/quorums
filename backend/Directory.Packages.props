@@ -20,6 +20,11 @@
     <PackageVersion Include="Polly.Extensions.Http" Version="3.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.2" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.2" />
+    <!-- Pinned directly so transitive pinning unifies EF Core on 9.0.2 everywhere:
+         Npgsql.EntityFrameworkCore.PostgreSQL only requires Relational >= 9.0.0, which
+         NuGet would otherwise resolve to 9.0.0 in the test project (MSB3277 split). -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.2" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.2" />
     <!-- Pinned directly to override the vulnerable 8.0.0 brought in transitively
          by AspNetCore.HealthChecks.NpgSql (NU1903 / GHSA-x9vc-6hfv-hg8c). -->
     <PackageVersion Include="Npgsql" Version="9.0.2" />
