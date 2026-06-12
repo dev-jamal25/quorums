@@ -5,6 +5,7 @@
 // GET /health surface and the controllers.
 using Backend.Api.Dtos;
 using Backend.Api.HealthChecks;
+using Backend.Api.Middleware;
 using Backend.Infrastructure.Configuration;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Onboarding;
@@ -32,6 +33,8 @@ builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateBrandRequestValidator>();
 
 var app = builder.Build();
+
+app.UseMiddleware<BrandContextMiddleware>();
 
 app.MapDependencyHealthChecks();
 app.MapControllers();
