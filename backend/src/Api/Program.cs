@@ -4,6 +4,7 @@
 // FluentValidation edge validation, and the dependency health checks; maps the
 // GET /health surface and the controllers.
 using Backend.Api.Dtos;
+using Backend.Api.Hangfire;
 using Backend.Api.HealthChecks;
 using Backend.Api.Middleware;
 using Backend.Infrastructure.Configuration;
@@ -37,9 +38,13 @@ var app = builder.Build();
 
 app.UseMiddleware<BrandContextMiddleware>();
 
-// Dev-only: exposes the Hangfire job dashboard. Protect with auth or IP
-// allowlist before any non-local environment.
-app.UseHangfireDashboard("/hangfire");
+// Dev-only: allows Docker-host browsers to reach the dashboard. The default
+// Hangfire filter is local-only, which rejects non-loopback (host→container)
+// requests. Replace with real auth before any non-local environment.
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = [new AllowAnonymousDashboardAuthorizationFilter()]
+});
 
 app.MapDependencyHealthChecks();
 app.MapControllers();
