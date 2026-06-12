@@ -5,8 +5,11 @@
 // GET /health surface and the controllers.
 using Backend.Api.Dtos;
 using Backend.Api.HealthChecks;
+using Backend.Api.Middleware;
 using Backend.Infrastructure.Configuration;
+using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Onboarding;
+using Backend.Infrastructure.Orchestration;
 using Backend.Infrastructure.Persistence;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -18,6 +21,8 @@ await builder.Configuration.AddVaultKvSecretsAsync();
 builder.Services.AddValidatedAppOptions(builder.Configuration);
 builder.Services.AddDataAccess();
 builder.Services.AddOnboarding();
+builder.Services.AddHangfireJobStore(builder.Configuration);
+builder.Services.AddOrchestration();
 builder.Services.AddDependencyHealthChecks(builder.Configuration);
 
 builder.Services.AddControllers();
@@ -28,6 +33,8 @@ builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateBrandRequestValidator>();
 
 var app = builder.Build();
+
+app.UseMiddleware<BrandContextMiddleware>();
 
 app.MapDependencyHealthChecks();
 app.MapControllers();
