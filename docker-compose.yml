@@ -40,7 +40,7 @@ services:
     # (zero version skew); overrides the entrypoint to run the worker assembly.
     environment:
       Vault__Enabled: "false"
-    command: ["dotnet", "Backend.Worker.dll"]
+    command: ["Backend.Worker.dll"]
     env_file: [.env]
     extra_hosts:
       - "host.docker.internal:host-gateway"
