@@ -24,10 +24,16 @@ public static class VaultConfigurationExtensions
         this ConfigurationManager configuration,
         CancellationToken cancellationToken = default)
     {
-        var vault = configuration.GetSection(VaultOptions.SectionName).Get<VaultOptions>();
-        if (vault is null || !vault.Enabled)
+        // GetValue<bool> treats missing or empty-string as false and never throws,
+        // so Vault__Enabled='' or a missing key both skip KV loading cleanly.
+        if (!configuration.GetValue<bool>("Vault:Enabled", false))
         {
-            // Dev fallback: configuration comes from appsettings.json + environment.
+            return;
+        }
+
+        var vault = configuration.GetSection(VaultOptions.SectionName).Get<VaultOptions>();
+        if (vault is null)
+        {
             return;
         }
 
@@ -37,7 +43,11 @@ public static class VaultConfigurationExtensions
                 "Vault is enabled but no access token is configured (Vault:Token).");
         }
 
-        var client = new VaultClient(new VaultClientSettings(vault.Address, new TokenAuthMethodInfo(vault.Token)));
+        // Vault:Address is stored as host:port only (no scheme) — the application
+        // is the sole owner of the http:// prefix (DL-011 env convention).
+        var client = new VaultClient(new VaultClientSettings(
+            $"http://{vault.Address}",
+            new TokenAuthMethodInfo(vault.Token)));
 
         Secret<SecretData> secret = await client.V1.Secrets.KeyValue.V2
             .ReadSecretAsync(path: vault.KvSecretPath, mountPoint: vault.KvMount)

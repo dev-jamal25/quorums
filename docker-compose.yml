@@ -10,6 +10,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     # ASP.NET Core Web API. HTTP surface: brands, knowledge CMS, runs, approvals, assets.
+    environment:
+      Vault__Enabled: "false"
     env_file: [.env]
     ports:
       - "8080:8080"
@@ -31,6 +33,8 @@ services:
       dockerfile: Dockerfile
     # .NET Worker Service hosting the Hangfire server. Same publish output as api
     # (zero version skew); overrides the entrypoint to run the worker assembly.
+    environment:
+      Vault__Enabled: "false"
     command: ["dotnet", "Backend.Worker.dll"]
     env_file: [.env]
     extra_hosts:
@@ -108,10 +112,14 @@ services:
     image: hashicorp/vault
     # Dev mode for the demo. KV: app secrets. Transit: per-brand token encryption
     # (transit/keys/brand-tokens). Hardening path documented; dev mode stated openly.
+    # SKIP_SETCAP suppresses the CAP_SETFCAP error on Docker Desktop / WSL2 (HashiCorp
+    # documented escape hatch). IPC_LOCK keeps mlock available when the kernel allows it.
     cap_add: [IPC_LOCK]
+    command: server -dev
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
       VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      SKIP_SETCAP: "true"
     ports:
       - "8200:8200"
 
