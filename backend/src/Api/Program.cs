@@ -13,6 +13,7 @@ using Backend.Infrastructure.Orchestration;
 using Backend.Infrastructure.Persistence;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Hangfire;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +36,10 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateBrandRequestValidator
 var app = builder.Build();
 
 app.UseMiddleware<BrandContextMiddleware>();
+
+// Dev-only: exposes the Hangfire job dashboard. Protect with auth or IP
+// allowlist before any non-local environment.
+app.UseHangfireDashboard("/hangfire");
 
 app.MapDependencyHealthChecks();
 app.MapControllers();
