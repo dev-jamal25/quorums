@@ -13,6 +13,8 @@ services:
     env_file: [.env]
     ports:
       - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -21,8 +23,6 @@ services:
       minio:
         condition: service_healthy
       vault:
-        condition: service_started
-      embeddings:
         condition: service_started
 
   worker:
@@ -33,6 +33,8 @@ services:
     # (zero version skew); overrides the entrypoint to run the worker assembly.
     command: ["dotnet", "Backend.Worker.dll"]
     env_file: [.env]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,8 +43,6 @@ services:
       minio:
         condition: service_healthy
       vault:
-        condition: service_started
-      embeddings:
         condition: service_started
 
   frontend:
@@ -118,7 +118,9 @@ services:
   embeddings:
     image: ollama/ollama
     # Local model server for nomic-embed-text-v1.5 over HTTP (DL-016). Self-hosted,
-    # open-source. Must be healthy before ingest/retrieval.
+    # open-source. Opt-in via `docker compose --profile embeddings up`; default run
+    # uses host-installed Ollama at EMBEDDINGS_URL=http://host.docker.internal:11434.
+    profiles: ["embeddings"]
     ports:
       - "11434:11434"
     volumes:
