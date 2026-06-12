@@ -81,6 +81,7 @@ public sealed class RunsController : ControllerBase
 
         if (run is null)
         {
+            await handle.CompleteAsync(cancellationToken);
             return NotFound();
         }
 
@@ -95,6 +96,7 @@ public sealed class RunsController : ControllerBase
             phase = state?.Phase;
         }
 
+        await handle.CompleteAsync(cancellationToken);
         return Ok(new RunStatusResponse(run.Id, run.Status, phase));
     }
 
