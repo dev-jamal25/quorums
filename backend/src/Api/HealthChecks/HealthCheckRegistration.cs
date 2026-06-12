@@ -17,25 +17,33 @@ public static class HealthCheckRegistration
 
     /// <summary>
     /// Registers the health check services in DI: a self/liveness check and one
-    /// readiness check per dependency. Endpoint topology is read from
-    /// configuration (compose service defaults applied when a key is absent);
-    /// the Postgres connection string is resolved at check time so a missing
-    /// secret surfaces as an unhealthy entry rather than a startup crash.
+    /// readiness check per dependency. Endpoint topology is read from configuration
+    /// (compose service defaults applied when a key is absent).
+    ///
+    /// Convention: *__Endpoint and *__Address config values store host:port only
+    /// (no scheme). This method is the sole owner of the http:// prefix so the
+    /// URI is never double-schemed regardless of what the env file contains.
+    ///
+    /// Optional dependencies (Vault) register their check only when the matching
+    /// feature flag is true. A disabled dependency is not a readiness concern.
     /// </summary>
     public static IServiceCollection AddDependencyHealthChecks(
         this IServiceCollection services,
         IConfiguration configuration)
     {
         var redis = configuration["Redis:Configuration"] ?? "redis:6379";
+
+        // host:port only — this method prepends http:// (see convention above).
         var minioEndpoint = configuration["Minio:Endpoint"] ?? "minio:9000";
-        var vaultAddress = configuration["Vault:Address"] ?? "http://vault:8200";
+        var vaultAddress = configuration["Vault:Address"] ?? "vault:8200";
+        var vaultEnabled = configuration.GetValue<bool>("Vault:Enabled", false);
         var embeddingsBaseUrl = configuration["Embeddings:BaseUrl"] ?? "http://embeddings:11434";
 
         var minioHealthUri = new Uri($"http://{minioEndpoint}/minio/health/live");
-        var vaultHealthUri = new Uri($"{vaultAddress.TrimEnd('/')}/v1/sys/health");
+        var vaultHealthUri = new Uri($"http://{vaultAddress.TrimEnd('/')}/v1/sys/health");
         var embeddingsHealthUri = new Uri($"{embeddingsBaseUrl.TrimEnd('/')}/");
 
-        services.AddHealthChecks()
+        var builder = services.AddHealthChecks()
             // Liveness: the process is up and serving. Always healthy if reached.
             .AddCheck("self", () => HealthCheckResult.Healthy("Process is live."), tags: [LiveTag])
             // Readiness: each external dependency, probed asynchronously.
@@ -53,13 +61,20 @@ public static class HealthCheckRegistration
                 name: "minio",
                 tags: [ReadyTag])
             .AddUrlGroup(
-                vaultHealthUri,
-                name: "vault",
-                tags: [ReadyTag])
-            .AddUrlGroup(
                 embeddingsHealthUri,
                 name: "embeddings",
                 tags: [ReadyTag]);
+
+        // Vault is optional: only probe it when Vault:Enabled=true. A disabled
+        // Vault is not a readiness concern and must not cause /health to report
+        // Unhealthy for the default dev setup.
+        if (vaultEnabled)
+        {
+            builder.AddUrlGroup(
+                vaultHealthUri,
+                name: "vault",
+                tags: [ReadyTag]);
+        }
 
         return services;
     }
