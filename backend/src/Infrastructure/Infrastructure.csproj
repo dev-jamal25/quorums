@@ -13,10 +13,19 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- Design-time only: the IDesignTimeDbContextFactory + migrations tooling.
+         PrivateAssets=all keeps it out of Api/Worker publish output. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Core\Core.csproj" />
+  </ItemGroup>
+
+  <!-- The isolation test drives the real internal BrandScope binding path. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Backend.IntegrationTests" />
   </ItemGroup>
 
 </Project>

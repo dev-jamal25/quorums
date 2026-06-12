@@ -5,12 +5,14 @@
 // and controllers are added in the build-order slices.
 using Backend.Api.HealthChecks;
 using Backend.Infrastructure.Configuration;
+using Backend.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
 await builder.Configuration.AddVaultKvSecretsAsync();
 
 builder.Services.AddValidatedAppOptions(builder.Configuration);
+builder.Services.AddDataAccess();
 builder.Services.AddDependencyHealthChecks(builder.Configuration);
 
 var app = builder.Build();

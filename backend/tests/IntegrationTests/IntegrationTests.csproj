@@ -8,6 +8,9 @@
     <AssemblyName>Backend.IntegrationTests</AssemblyName>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Underscored test method names (Behaviour_under_condition) are the documented
+         testing convention; CA1707 fights it. Suppressed for test code only. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +20,9 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="NSubstitute" />
+    <!-- Direct EF Core + Npgsql use in the RLS leakage test (UseNpgsql, MigrateAsync,
+         NpgsqlConnectionStringBuilder for the least-privilege role connection). -->
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
 
   <ItemGroup>
