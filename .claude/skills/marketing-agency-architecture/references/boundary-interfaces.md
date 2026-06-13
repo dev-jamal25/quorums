@@ -51,7 +51,18 @@ needed. A boundary interface + mock + registration template is in
 
 - One interface; `MockMetaIntegration` returns realistic publish/ads responses;
   `LiveMetaIntegration` is optional/bonus, selected via settings.
-- Methods cover publish and the designed-for token refresh/revoke lifecycle.
+- Method shape: `PublishAsync(PublishRequest) → PublishResult`, where
+  `PublishRequest { brandId, contentItemId, caption, mediaStorageKey? }` and
+  `PublishResult { externalRef?, status, error? }`. The two impls are registered
+  Singleton, selected once from `Meta:Mode` (`mock` → `MockMetaIntegration`,
+  `live` → `LiveMetaIntegration`); an unknown mode fails fast at resolve.
+- **Idempotency (DL-022):** the mock derives `externalRef` deterministically from
+  `contentItemId` (the run id) — `mock://meta/{id}` — so a retried publish re-uses
+  the same ref instead of posting twice. The job-level Publishing-only guard plus
+  the `→ Done` transition already prevent a second `ResumeRun` from publishing.
+- Publishing only ever runs in the `ResumeRun` segment, after an approval record
+  exists (DL-005). A publish failure surfaces as a `ToolError` on
+  `RunState.Errors`, never an exception into the graph.
 - **Token decrypt happens only here, at call time** (see `isolation-and-secrets.md`).
 - A full run completes with **zero live Meta calls** when the mock is selected.
 

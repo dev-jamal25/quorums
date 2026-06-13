@@ -1,5 +1,8 @@
+using System.Text.Json;
 using Backend.Core.Domain;
 using Backend.Core.Multitenancy;
+using Backend.Core.Orchestration;
+using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Multitenancy;
 using Backend.Infrastructure.Orchestration;
@@ -92,7 +95,7 @@ public sealed class DurabilityFixture : IAsyncLifetime
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new StubOrchestrator(new InMemoryStorageService());
+        var orchestrator = new StubOrchestrator(new InMemoryStorageService(), new MockMetaIntegration());
         return (db, new ExecuteRunJob(db, scope, brandContext, orchestrator));
     }
 
@@ -102,8 +105,27 @@ public sealed class DurabilityFixture : IAsyncLifetime
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new StubOrchestrator(new InMemoryStorageService());
+        var orchestrator = new StubOrchestrator(new InMemoryStorageService(), new MockMetaIntegration());
         return (db, new ResumeRunJob(db, scope, brandContext, orchestrator));
+    }
+
+    /// <summary>
+    /// Reads and deserializes the persisted <see cref="RunState"/> from the run's
+    /// checkpoint, under the brand's RLS scope — the same read path the trace and
+    /// status endpoints use.
+    /// </summary>
+    public async Task<RunState?> ReadCheckpointStateAsync(Guid runId, Guid brandId)
+    {
+        var (db, scope) = CreateReadContext(brandId);
+        await using (db)
+        {
+            await using var handle = await scope.BeginAsync();
+            var checkpoint = await db.RunCheckpoints.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.AgentRunId == runId);
+            return checkpoint is null
+                ? null
+                : JsonSerializer.Deserialize<RunState>(checkpoint.StateJson, RunStateJsonOptions.Options);
+        }
     }
 
     public (AppDbContext Db, IBrandScope Scope) CreateReadContext(Guid brandId)

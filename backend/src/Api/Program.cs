@@ -8,6 +8,7 @@ using Backend.Api.Hangfire;
 using Backend.Api.HealthChecks;
 using Backend.Api.Middleware;
 using Backend.Infrastructure.Configuration;
+using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Onboarding;
 using Backend.Infrastructure.Orchestration;
@@ -26,6 +27,7 @@ builder.Services.AddDataAccess();
 builder.Services.AddOnboarding();
 builder.Services.AddHangfireJobStore(builder.Configuration);
 builder.Services.AddStorage();
+builder.Services.AddMetaIntegration();
 builder.Services.AddOrchestration();
 builder.Services.AddDependencyHealthChecks(builder.Configuration);
 

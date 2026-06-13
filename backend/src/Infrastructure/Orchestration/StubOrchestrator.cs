@@ -1,4 +1,5 @@
 using Backend.Core.Common;
+using Backend.Core.Integrations;
 using Backend.Core.Orchestration;
 using Backend.Core.Orchestration.Contracts;
 using Backend.Core.Storage;
@@ -8,10 +9,12 @@ namespace Backend.Infrastructure.Orchestration;
 /// <summary>
 /// Deterministic placeholder orchestrator (no LLM, no MAF). It produces fixed typed
 /// outputs but performs <em>real</em> I/O on the proven durable seam: the media step
-/// writes a real object to MinIO. A storage failure surfaces as a structured
-/// <see cref="ToolError"/> on <see cref="RunState.Errors"/> (DL-022) rather than an
-/// exception into the graph; the asset id is derived from the run id so a Hangfire
-/// retry overwrites the same key instead of duplicating.
+/// writes a real object to MinIO and the publish step goes through
+/// <see cref="IMetaIntegration"/>. A storage or publish failure surfaces as a
+/// structured <see cref="ToolError"/> on <see cref="RunState.Errors"/> (DL-022)
+/// rather than an exception into the graph; the asset id and publish key are derived
+/// from the run id so a Hangfire retry overwrites the same key / re-uses the same
+/// external ref instead of duplicating.
 /// </summary>
 public sealed class StubOrchestrator : IOrchestrator
 {
@@ -22,8 +25,13 @@ public sealed class StubOrchestrator : IOrchestrator
     private const string MediaMimeType = "image/png";
 
     private readonly IStorageService _storage;
+    private readonly IMetaIntegration _meta;
 
-    public StubOrchestrator(IStorageService storage) => _storage = storage;
+    public StubOrchestrator(IStorageService storage, IMetaIntegration meta)
+    {
+        _storage = storage;
+        _meta = meta;
+    }
 
     public async Task<RunState> RunGenerationAsync(
         RunState state,
@@ -95,17 +103,43 @@ public sealed class StubOrchestrator : IOrchestrator
         };
     }
 
-    public Task<RunState> RunPublishAsync(RunState state, CancellationToken cancellationToken = default)
+    public async Task<RunState> RunPublishAsync(
+        RunState state,
+        CancellationToken cancellationToken = default)
     {
-        var result = new PublishResult(
-            ExternalRef: null,
-            Status: "stub-published",
-            Error: null);
+        // ContentItemId is keyed to the run so a retried publish re-uses the same
+        // external reference rather than creating a second post (DL-022).
+        var caption = state.Caption is null
+            ? string.Empty
+            : $"{state.Caption.Hook}\n\n{state.Caption.Body}";
 
-        return Task.FromResult(state with
+        var request = new PublishRequest(
+            BrandId: state.BrandId,
+            ContentItemId: state.RunId,
+            Caption: caption,
+            MediaStorageKey: state.Media?.StorageKey);
+
+        PublishResult result;
+        var errors = state.Errors;
+
+        try
+        {
+            result = await _meta.PublishAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            errors = [.. state.Errors, new ToolError(
+                Code: "meta.publish_failed",
+                Message: ex.Message,
+                Retryable: true)];
+            result = new PublishResult(ExternalRef: null, Status: "failed", Error: ex.Message);
+        }
+
+        return state with
         {
             Phase = GraphPhase.Done,
             Publish = result,
-        });
+            Errors = errors,
+        };
     }
 }

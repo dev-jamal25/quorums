@@ -2,6 +2,7 @@ using Backend.Core.Common;
 using Backend.Core.Orchestration;
 using Backend.Core.Orchestration.Contracts;
 using Backend.Core.Storage;
+using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Orchestration;
 using Xunit;
 
@@ -39,7 +40,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
-        var orchestrator = new StubOrchestrator(_fixture.Storage);
+        var orchestrator = new StubOrchestrator(_fixture.Storage, new MockMetaIntegration());
 
         var result = await orchestrator.RunGenerationAsync(state);
 
@@ -55,7 +56,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandA = Guid.NewGuid();
         var brandB = Guid.NewGuid();
-        var orchestrator = new StubOrchestrator(_fixture.Storage);
+        var orchestrator = new StubOrchestrator(_fixture.Storage, new MockMetaIntegration());
 
         var result = await orchestrator.RunGenerationAsync(NewState(brandA));
 
@@ -72,7 +73,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
-        var orchestrator = new StubOrchestrator(_fixture.Storage);
+        var orchestrator = new StubOrchestrator(_fixture.Storage, new MockMetaIntegration());
 
         var first = await orchestrator.RunGenerationAsync(state);
         var second = await orchestrator.RunGenerationAsync(state);
