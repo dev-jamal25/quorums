@@ -10,7 +10,9 @@ namespace Backend.Infrastructure.Orchestration;
 /// Deterministic placeholder orchestrator (no LLM, no MAF). It produces fixed typed
 /// outputs but performs <em>real</em> I/O on the proven durable seam: the media step
 /// writes a real object to MinIO and the publish step goes through
-/// <see cref="IMetaIntegration"/>. A storage or publish failure surfaces as a
+/// <see cref="IMetaIntegration"/>. Every node and every tool call records a span via
+/// <see cref="ITrace"/>, threaded through <see cref="RunState.Trace"/> so the trace
+/// survives the pause/resume seam. A storage or publish failure surfaces as a
 /// structured <see cref="ToolError"/> on <see cref="RunState.Errors"/> (DL-022)
 /// rather than an exception into the graph; the asset id and publish key are derived
 /// from the run id so a Hangfire retry overwrites the same key / re-uses the same
@@ -26,34 +28,41 @@ public sealed class StubOrchestrator : IOrchestrator
 
     private readonly IStorageService _storage;
     private readonly IMetaIntegration _meta;
+    private readonly ITrace _trace;
 
-    public StubOrchestrator(IStorageService storage, IMetaIntegration meta)
+    public StubOrchestrator(IStorageService storage, IMetaIntegration meta, ITrace trace)
     {
         _storage = storage;
         _meta = meta;
+        _trace = trace;
     }
 
     public async Task<RunState> RunGenerationAsync(
         RunState state,
         CancellationToken cancellationToken = default)
     {
+        var trace = state.Trace;
+
         var strategy = new ContentStrategy(
             Pillar: "stub-pillar",
             Angle: "stub-angle",
             Objective: "stub-objective",
             Audience: "stub-audience",
             CalendarSlot: null);
+        trace = await RecordAsync(trace, state, "strategy", null, cancellationToken).ConfigureAwait(false);
 
         var creative = new CreativeDirection(
             VisualConcept: "stub-concept",
             StyleTokens: ["soft"],
             ColorTokens: ["#ffffff"],
             MediaPromptBrief: "stub-brief");
+        trace = await RecordAsync(trace, state, "creative", null, cancellationToken).ConfigureAwait(false);
 
         var caption = new Caption(
             Hook: "stub-hook",
             Body: "stub-body",
             Hashtags: ["#stub"]);
+        trace = await RecordAsync(trace, state, "copywriting", null, cancellationToken).ConfigureAwait(false);
 
         // Asset id is deterministic per run so a retried segment overwrites the same
         // MinIO key (idempotent side effect, DL-022).
@@ -63,6 +72,9 @@ public sealed class StubOrchestrator : IOrchestrator
         MediaAssetRef? media = null;
         var errors = state.Errors;
 
+        var mediaStartedAt = DateTimeOffset.UtcNow;
+        string mediaStatus;
+        string? mediaError = null;
         try
         {
             var storedKey = await _storage
@@ -74,6 +86,7 @@ public sealed class StubOrchestrator : IOrchestrator
                 StorageKey: storedKey,
                 Modality: "image",
                 MimeType: MediaMimeType);
+            mediaStatus = "ok";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -83,7 +96,14 @@ public sealed class StubOrchestrator : IOrchestrator
                 Code: "storage.put_failed",
                 Message: ex.Message,
                 Retryable: true)];
+            mediaStatus = "error";
+            mediaError = ex.Message;
         }
+
+        trace = await _trace.RecordAsync(
+            trace, state.RunId, state.BrandId, "media", "minio.put",
+            mediaStatus, mediaStartedAt, DateTimeOffset.UtcNow, mediaError, cancellationToken)
+            .ConfigureAwait(false);
 
         var draft = new ContentItemDraft(
             CaptionRef: caption,
@@ -100,6 +120,7 @@ public sealed class StubOrchestrator : IOrchestrator
             Media = media,
             Draft = draft,
             Errors = errors,
+            Trace = trace,
         };
     }
 
@@ -122,9 +143,13 @@ public sealed class StubOrchestrator : IOrchestrator
         PublishResult result;
         var errors = state.Errors;
 
+        var startedAt = DateTimeOffset.UtcNow;
+        string spanStatus;
+        string? spanError = null;
         try
         {
             result = await _meta.PublishAsync(request, cancellationToken).ConfigureAwait(false);
+            spanStatus = "ok";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -133,13 +158,34 @@ public sealed class StubOrchestrator : IOrchestrator
                 Message: ex.Message,
                 Retryable: true)];
             result = new PublishResult(ExternalRef: null, Status: "failed", Error: ex.Message);
+            spanStatus = "error";
+            spanError = ex.Message;
         }
+
+        var trace = await _trace.RecordAsync(
+            state.Trace, state.RunId, state.BrandId, "publishing", "meta.publish",
+            spanStatus, startedAt, DateTimeOffset.UtcNow, spanError, cancellationToken)
+            .ConfigureAwait(false);
 
         return state with
         {
             Phase = GraphPhase.Done,
             Publish = result,
             Errors = errors,
+            Trace = trace,
         };
+    }
+
+    /// <summary>Records a zero-duration span for a deterministic planning node.</summary>
+    private Task<TraceRefs> RecordAsync(
+        TraceRefs trace,
+        RunState state,
+        string node,
+        string? tool,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return _trace.RecordAsync(
+            trace, state.RunId, state.BrandId, node, tool, "ok", now, now, null, cancellationToken);
     }
 }

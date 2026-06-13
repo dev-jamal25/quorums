@@ -100,6 +100,57 @@ public sealed class RunsController : ControllerBase
         return Ok(new RunStatusResponse(run.Id, run.Status, phase));
     }
 
+    [HttpGet("{id:guid}/trace")]
+    [ProducesResponseType(typeof(RunTraceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RunTraceResponse>> Trace(Guid id, CancellationToken cancellationToken)
+    {
+        if (!_brandContext.HasBrand)
+        {
+            return BadRequest(new { error = "X-Brand-Id header is required." });
+        }
+
+        await using var handle = await _scope.BeginAsync(cancellationToken);
+
+        // Loaded under the RLS-bound scope: a brand can only read its own run's trace.
+        var run = await _db.AgentRuns.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+        if (run is null)
+        {
+            await handle.CompleteAsync(cancellationToken);
+            return NotFound();
+        }
+
+        var checkpoint = await _db.RunCheckpoints.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.AgentRunId == id, cancellationToken);
+
+        RunState? state = checkpoint is null
+            ? null
+            : JsonSerializer.Deserialize<RunState>(checkpoint.StateJson, RunStateJsonOptions.Options);
+
+        await handle.CompleteAsync(cancellationToken);
+
+        if (state is null)
+        {
+            return NotFound();
+        }
+
+        var spans = (state.Trace.Spans ?? [])
+            .Select(s => new TraceSpanDto(
+                s.SpanId,
+                s.Node,
+                s.Tool,
+                s.Status,
+                s.StartedAt,
+                s.EndedAt,
+                (s.EndedAt - s.StartedAt).TotalMilliseconds,
+                s.Error))
+            .ToList();
+
+        return Ok(new RunTraceResponse(run.Id, state.Trace.TraceId, spans));
+    }
+
     [HttpPost("{id:guid}/approval")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

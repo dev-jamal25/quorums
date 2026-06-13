@@ -26,6 +26,9 @@ public static class OptionsServiceCollectionExtensions
         services.AddValidatedOptions<EmbeddingsOptions>(configuration, EmbeddingsOptions.SectionName);
         services.AddValidatedOptions<HangfireOptions>(configuration, HangfireOptions.SectionName);
         services.AddValidatedOptions<MetaOptions>(configuration, MetaOptions.SectionName);
+        // Langfuse keys are optional (empty = no-op local tracing); no [Required], so
+        // validation is a no-op but the binding stays consistent with every other section.
+        services.AddValidatedOptions<LangfuseOptions>(configuration, LangfuseOptions.SectionName);
         return services;
     }
 

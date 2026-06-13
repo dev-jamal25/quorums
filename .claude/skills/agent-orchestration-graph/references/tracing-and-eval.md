@@ -10,6 +10,27 @@ Encodes §10 of the frozen design.
 - Span/trace ids live in `RunState.Trace` (`TraceRefs`) so they survive the
   pause/resume seam.
 
+### Implemented contract (slice c2)
+
+- `ITrace.RecordAsync(current, runId, brandId, node, tool?, status, startedAt,
+  endedAt, errorMessage?)` records one completed span and returns the updated
+  `TraceRefs` to thread back into `RunState`. The first span assigns the trace id,
+  so ExecuteRun and ResumeRun share one continuous trace across the seam.
+- `TraceRefs(TraceId, SpanIds, Spans)`: `TraceId` + `SpanIds` are the frozen
+  Langfuse references; `Spans` (`TraceSpan { spanId, node, tool?, status,
+  startedAt, endedAt, error? }`) is the assembled detail the endpoint returns —
+  read straight from the checkpoint, so the trace is complete with or without a
+  live Langfuse.
+- **Optional, config-gated like Vault (DL-011 pattern).** `LangfuseTrace` is
+  selected only when `Langfuse:BaseUrl` + `PublicKey` + `SecretKey` are all set
+  (typed `HttpClient`, basic auth, 5s timeout, best-effort post). Otherwise
+  `LocalTraceRecorder` assembles the trace in-process with no network. A Langfuse
+  failure is logged and swallowed — **tracing never fails the run**. The Langfuse
+  readiness check registers only when configured.
+- `GET /runs/{id}/trace` loads the run under the **RLS-bound scope** (no unscoped
+  read) and returns `{ runId, traceId, spans[] }`; a brand cannot read another
+  brand's trace.
+
 ## Replayability (the reason the topology is a graph, not a swarm)
 
 Runs are made replayable by:

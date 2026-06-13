@@ -39,6 +39,14 @@ public static class HealthCheckRegistration
         var vaultEnabled = configuration.GetValue<bool>("Vault:Enabled", false);
         var embeddingsBaseUrl = configuration["Embeddings:BaseUrl"] ?? "http://embeddings:11434";
 
+        // Langfuse is optional: configured only when the base URL and both keys are
+        // present. BaseUrl is a full URL (an API base), not a host:port endpoint.
+        var langfuseBaseUrl = configuration["Langfuse:BaseUrl"];
+        var langfuseConfigured =
+            !string.IsNullOrWhiteSpace(langfuseBaseUrl)
+            && !string.IsNullOrWhiteSpace(configuration["Langfuse:PublicKey"])
+            && !string.IsNullOrWhiteSpace(configuration["Langfuse:SecretKey"]);
+
         var minioHealthUri = new Uri($"http://{minioEndpoint}/minio/health/live");
         var vaultHealthUri = new Uri($"http://{vaultAddress.TrimEnd('/')}/v1/sys/health");
         var embeddingsHealthUri = new Uri($"{embeddingsBaseUrl.TrimEnd('/')}/");
@@ -73,6 +81,17 @@ public static class HealthCheckRegistration
             builder.AddUrlGroup(
                 vaultHealthUri,
                 name: "vault",
+                tags: [ReadyTag]);
+        }
+
+        // Langfuse is optional in the same way: only probe it when fully configured,
+        // so the default (no-op local tracing) never reports /health Unhealthy.
+        if (langfuseConfigured)
+        {
+            var langfuseHealthUri = new Uri($"{langfuseBaseUrl!.TrimEnd('/')}/api/public/health");
+            builder.AddUrlGroup(
+                langfuseHealthUri,
+                name: "langfuse",
                 tags: [ReadyTag]);
         }
 

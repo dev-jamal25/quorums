@@ -4,6 +4,7 @@ using Backend.Core.Orchestration.Contracts;
 using Backend.Core.Storage;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Orchestration;
+using Backend.Infrastructure.Tracing;
 using Xunit;
 
 namespace Backend.IntegrationTests.Storage;
@@ -33,14 +34,15 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
         Publish: null,
         Budget: new Budget(TokenBudget: 10_000, TokensSpent: 0, MediaBudget: 1.00m, MediaSpent: 0m),
         Errors: [],
-        Trace: new TraceRefs(TraceId: string.Empty, SpanIds: []));
+        Trace: new TraceRefs(TraceId: string.Empty, SpanIds: [], Spans: []));
 
     [Fact]
     public async Task Generation_writes_a_brand_prefixed_object_that_exists_in_storage()
     {
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
-        var orchestrator = new StubOrchestrator(_fixture.Storage, new MockMetaIntegration());
+        var orchestrator = new StubOrchestrator(
+            _fixture.Storage, new MockMetaIntegration(), new LocalTraceRecorder());
 
         var result = await orchestrator.RunGenerationAsync(state);
 
@@ -56,7 +58,8 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandA = Guid.NewGuid();
         var brandB = Guid.NewGuid();
-        var orchestrator = new StubOrchestrator(_fixture.Storage, new MockMetaIntegration());
+        var orchestrator = new StubOrchestrator(
+            _fixture.Storage, new MockMetaIntegration(), new LocalTraceRecorder());
 
         var result = await orchestrator.RunGenerationAsync(NewState(brandA));
 
@@ -73,7 +76,8 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
-        var orchestrator = new StubOrchestrator(_fixture.Storage, new MockMetaIntegration());
+        var orchestrator = new StubOrchestrator(
+            _fixture.Storage, new MockMetaIntegration(), new LocalTraceRecorder());
 
         var first = await orchestrator.RunGenerationAsync(state);
         var second = await orchestrator.RunGenerationAsync(state);

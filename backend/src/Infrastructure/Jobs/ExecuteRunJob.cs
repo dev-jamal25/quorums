@@ -65,7 +65,7 @@ public sealed class ExecuteRunJob
             Publish: null,
             Budget: new Budget(TokenBudget: 10_000, TokensSpent: 0, MediaBudget: 1.00m, MediaSpent: 0m),
             Errors: [],
-            Trace: new TraceRefs(TraceId: string.Empty, SpanIds: []));
+            Trace: new TraceRefs(TraceId: string.Empty, SpanIds: [], Spans: []));
 
         state = await _orchestrator.RunGenerationAsync(state, cancellationToken);
 

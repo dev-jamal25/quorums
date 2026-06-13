@@ -14,6 +14,7 @@ using Backend.Infrastructure.Onboarding;
 using Backend.Infrastructure.Orchestration;
 using Backend.Infrastructure.Persistence;
 using Backend.Infrastructure.Storage;
+using Backend.Infrastructure.Tracing;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Hangfire;
@@ -28,6 +29,7 @@ builder.Services.AddOnboarding();
 builder.Services.AddHangfireJobStore(builder.Configuration);
 builder.Services.AddStorage();
 builder.Services.AddMetaIntegration();
+builder.Services.AddTracing(builder.Configuration);
 builder.Services.AddOrchestration();
 builder.Services.AddDependencyHealthChecks(builder.Configuration);
 
