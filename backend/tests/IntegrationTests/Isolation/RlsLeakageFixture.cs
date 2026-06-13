@@ -128,8 +128,26 @@ public sealed class RlsLeakageFixture : IAsyncLifetime
             new Brand { Id = BrandB, Name = "Brand B", CreatedAt = now });
 
         seed.BrandProfiles.AddRange(
-            new BrandProfile { Id = ProfileA, BrandId = BrandA, Brief = "Brand A brief", BrandVoice = "warm", CreatedAt = now },
-            new BrandProfile { Id = ProfileB, BrandId = BrandB, Brief = "Brand B brief", BrandVoice = "bold", CreatedAt = now });
+            new BrandProfile
+            {
+                Id = ProfileA,
+                BrandId = BrandA,
+                Positioning = "Brand A positioning",
+                ToneDescriptors = ["warm"],
+                ImageryStyle = "soft",
+                ProductContext = "Brand A products",
+                CreatedAt = now,
+            },
+            new BrandProfile
+            {
+                Id = ProfileB,
+                BrandId = BrandB,
+                Positioning = "Brand B positioning",
+                ToneDescriptors = ["bold"],
+                ImageryStyle = "stark",
+                ProductContext = "Brand B products",
+                CreatedAt = now,
+            });
 
         seed.AgentRuns.AddRange(
             new AgentRun { Id = Guid.NewGuid(), BrandId = BrandA, Status = RunStatus.Queued, CreatedAt = now, UpdatedAt = now },

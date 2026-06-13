@@ -19,6 +19,8 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.Minio" />
+    <PackageReference Include="Minio" />
     <PackageReference Include="NSubstitute" />
     <!-- Direct EF Core + Npgsql use in the RLS leakage test (UseNpgsql, MigrateAsync,
          NpgsqlConnectionStringBuilder for the least-privilege role connection). -->

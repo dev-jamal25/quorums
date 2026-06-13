@@ -1,6 +1,7 @@
 <!-- UnitTests: DTO/FluentValidation validator tests + service tests with mocked
-     integrations (NSubstitute). References Core + Infrastructure. Test-only
-     packages live here, never in Api/Worker. (Scaffold: no tests yet.) -->
+     integrations (NSubstitute). References Core + Infrastructure + Api (validator
+     tests bind the Api boundary DTOs). Test-only packages live here, never in
+     Api/Worker. -->
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
@@ -8,6 +9,9 @@
     <AssemblyName>Backend.UnitTests</AssemblyName>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Underscored test method names (Behaviour_under_condition) are the documented
+         testing convention; CA1707 fights it. Suppressed for test code only. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,6 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Api\Api.csproj" />
     <ProjectReference Include="..\..\src\Core\Core.csproj" />
     <ProjectReference Include="..\..\src\Infrastructure\Infrastructure.csproj" />
   </ItemGroup>

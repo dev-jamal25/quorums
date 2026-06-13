@@ -10,9 +10,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     # ASP.NET Core Web API. HTTP surface: brands, knowledge CMS, runs, approvals, assets.
+    environment:
+      Vault__Enabled: "false"
     env_file: [.env]
     ports:
       - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -22,8 +26,11 @@ services:
         condition: service_healthy
       vault:
         condition: service_started
-      embeddings:
-        condition: service_started
+      # Optional: only waits when --profile embeddings is active; skipped on
+      # the default host-Ollama path (required: false).
+      ollama-init:
+        condition: service_completed_successfully
+        required: false
 
   worker:
     build:
@@ -31,8 +38,12 @@ services:
       dockerfile: Dockerfile
     # .NET Worker Service hosting the Hangfire server. Same publish output as api
     # (zero version skew); overrides the entrypoint to run the worker assembly.
-    command: ["dotnet", "Backend.Worker.dll"]
+    environment:
+      Vault__Enabled: "false"
+    command: ["Backend.Worker.dll"]
     env_file: [.env]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,8 +53,9 @@ services:
         condition: service_healthy
       vault:
         condition: service_started
-      embeddings:
-        condition: service_started
+      ollama-init:
+        condition: service_completed_successfully
+        required: false
 
   frontend:
     build:
@@ -108,19 +120,47 @@ services:
     image: hashicorp/vault
     # Dev mode for the demo. KV: app secrets. Transit: per-brand token encryption
     # (transit/keys/brand-tokens). Hardening path documented; dev mode stated openly.
+    # SKIP_SETCAP suppresses the CAP_SETFCAP error on Docker Desktop / WSL2 (HashiCorp
+    # documented escape hatch). IPC_LOCK keeps mlock available when the kernel allows it.
     cap_add: [IPC_LOCK]
+    command: server -dev
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
       VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      SKIP_SETCAP: "true"
     ports:
       - "8200:8200"
 
   embeddings:
     image: ollama/ollama
     # Local model server for nomic-embed-text-v1.5 over HTTP (DL-016). Self-hosted,
-    # open-source. Must be healthy before ingest/retrieval.
+    # open-source. Opt-in via `docker compose --profile embeddings up`; default run
+    # uses host-installed Ollama at Embeddings__BaseUrl=http://host.docker.internal:11434.
+    profiles: ["embeddings"]
     ports:
       - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  ollama-init:
+    image: ollama/ollama
+    # One-shot that pulls nomic-embed-text:v1.5 into the shared ollamadata volume.
+    # Runs only with the embeddings profile. api and worker declare an optional
+    # depends_on so they wait for the model to be ready when the profile is active,
+    # but skip the wait entirely on the default host-Ollama path.
+    profiles: ["embeddings"]
+    environment:
+      OLLAMA_HOST: http://embeddings:11434
+    command: pull nomic-embed-text:v1.5
+    depends_on:
+      embeddings:
+        condition: service_healthy
     volumes:
       - ollamadata:/root/.ollama
 

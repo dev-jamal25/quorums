@@ -32,7 +32,48 @@ cp .env.example .env   # fill in values (no secrets are committed)
 docker compose up
 ```
 
-<!-- TODO: first-run notes (migrations, MinIO bucket, Ollama model pull, Vault init). -->
+### Local dev setup — embeddings
+
+The `embeddings` service (Ollama) is behind a Compose profile and **not** started
+by default. The recommended path is to install Ollama directly on the host so
+models persist across rebuilds and avoid running a container for something the host
+can serve natively.
+
+**a) Install Ollama on the host**
+
+Download and run the installer from <https://ollama.com/download> (macOS, Linux,
+Windows). Ollama starts an HTTP server on port 11434 automatically.
+
+**b) Pull the embedding model**
+
+```bash
+ollama pull nomic-embed-text
+```
+
+**c) Confirm the model is available**
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+You should see `nomic-embed-text` listed in the response.
+
+**d) (Optional) Run Ollama inside Compose instead**
+
+If you prefer to keep everything in containers, opt in via the `embeddings`
+profile and update `EMBEDDINGS_URL` in your `.env`:
+
+```bash
+# in .env:
+# Embeddings__BaseUrl=http://embeddings:11434
+
+docker compose --profile embeddings up
+```
+
+The embeddings health check probes `EMBEDDINGS_URL` regardless of which path you
+choose — the abstraction handles the swap.
+
+<!-- TODO: first-run notes (migrations, MinIO bucket, Vault init). -->
 
 ## Pre-commit hooks
 

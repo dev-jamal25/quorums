@@ -21,6 +21,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish ./
 
-# Default to the API; the worker service overrides the command in docker-compose.
+# ENTRYPOINT is the runtime only; CMD is the assembly name.
+# The worker service overrides CMD via `command:` in docker-compose.yml.
+# If ENTRYPOINT also carried the assembly name, compose `command` would
+# append to it (dotnet Backend.Api.dll dotnet Backend.Worker.dll) instead
+# of replacing it, so the worker would silently run the API image.
 EXPOSE 8080
-ENTRYPOINT ["dotnet", "Backend.Api.dll"]
+ENTRYPOINT ["dotnet"]
+CMD ["Backend.Api.dll"]
