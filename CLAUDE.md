@@ -93,3 +93,36 @@ dotnet ef database update -p src/Infrastructure -s src/Api --connection "Host=lo
 - `POST /runs/{id}/approval {"decision":"approve"}` → `GET` → `status=3` (Publishing) → `status=4` (Done)
 - Second run: reject path → `status=6` (Rejected), no `ResumeRun` enqueued, phase unchanged
 - `/health` → Healthy (postgres, redis, minio, embeddings, self — Vault absent because disabled)
+
+## Slice c2 — real I/O on the durable seam (2026-06-13)
+
+The deterministic stub orchestrator (no LLM, no MAF) now does real I/O behind
+swappable interfaces. Three seams, all CI-mockable:
+
+- **`IStorageService` / `MinioStorage`** — media step writes a real 1×1 PNG to MinIO
+  at `brands/{brandId}/assets/{assetId}.png`. Asset id is
+  `DeterministicGuid.From(runId, "asset")`, so a Hangfire retry overwrites one key
+  (no duplicate). `LocalStorage` (in-memory) double for durability tests; real MinIO
+  via `Testcontainers.Minio` for `Category=Storage`.
+- **`IMetaIntegration` / `MockMetaIntegration`** — `ResumeRun` publishes via the mock
+  (selected by `Meta:Mode=mock`); `externalRef = mock://meta/{DeterministicGuid(runId,
+  "meta")}`, deterministic so a retry re-uses the same ref. `LiveMetaIntegration` is a
+  present-but-throwing seam selected by `Meta:Mode=live`.
+- **`ITrace`** — a span per node + per tool call, threaded through `RunState.Trace`
+  (`TraceRefs(TraceId, SpanIds, Spans)`) so one trace spans the ExecuteRun→ResumeRun
+  seam. `LangfuseTrace` (typed HttpClient, best-effort) only when `Langfuse:BaseUrl`
+  + both keys are set; otherwise `LocalTraceRecorder` (no network). **Langfuse is
+  optional and config-gated exactly like Vault — its absence never fails a run**, and
+  the Langfuse health check registers only when configured. Surfaced at
+  `GET /runs/{id}/trace`, loaded under the RLS-bound scope.
+
+Failures from storage/publish surface as a `ToolError` on `RunState.Errors`, never an
+exception into the graph (DL-022).
+
+**Smoke evidence (2026-06-13, commit d2b4c74)** — `docker compose` full stack:
+- `POST /brands` → `brandId`; `POST /runs` (X-Brand-Id) → `runId`
+- After `ExecuteRun`: MinIO `mc ls` shows `quorums-media/brands/{brandId}/assets/{assetId}.png` (70 B); `status=2`
+- `approve` → `ResumeRun` → `status=4` (Done); `Publish.ExternalRef = mock://meta/{guid}`, `Status=published`
+- `GET /runs/{id}/trace` → one `traceId`, 5 spans: strategy, creative, copywriting, `media:minio.put` (~94 ms real write), `publishing:meta.publish`
+- Exactly **1** object under the brand prefix (idempotent write)
+- `/health` → Healthy (postgres, redis, minio, embeddings, self — Vault + Langfuse absent because unconfigured)
