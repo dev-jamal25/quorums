@@ -4,6 +4,7 @@ using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Multitenancy;
 using Backend.Infrastructure.Orchestration;
 using Backend.Infrastructure.Persistence;
+using Backend.IntegrationTests.Support;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -91,7 +92,7 @@ public sealed class DurabilityFixture : IAsyncLifetime
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new StubOrchestrator();
+        var orchestrator = new StubOrchestrator(new InMemoryStorageService());
         return (db, new ExecuteRunJob(db, scope, brandContext, orchestrator));
     }
 
@@ -101,7 +102,7 @@ public sealed class DurabilityFixture : IAsyncLifetime
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new StubOrchestrator();
+        var orchestrator = new StubOrchestrator(new InMemoryStorageService());
         return (db, new ResumeRunJob(db, scope, brandContext, orchestrator));
     }
 

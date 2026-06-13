@@ -6,6 +6,7 @@ using Backend.Infrastructure.Configuration;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Orchestration;
 using Backend.Infrastructure.Persistence;
+using Backend.Infrastructure.Storage;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -15,6 +16,7 @@ builder.Services.AddValidatedAppOptions(builder.Configuration);
 builder.Services.AddDataAccess();
 builder.Services.AddHangfireJobStore(builder.Configuration);
 builder.Services.AddHangfireWorker();
+builder.Services.AddStorage();
 builder.Services.AddOrchestration();
 
 var host = builder.Build();

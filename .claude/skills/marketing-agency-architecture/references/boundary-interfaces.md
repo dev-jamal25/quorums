@@ -58,8 +58,21 @@ needed. A boundary interface + mock + registration template is in
 ### `IStorageService` (DL-009)
 
 - `MinioStorage` (default) uses the Minio .NET SDK; keys are
-  `brands/{brand_id}/assets/{asset_id}`, prefix derived from `IBrandContext`.
-- `LocalStorage` for tests.
+  `brands/{brand_id}/assets/{asset_id}.{ext}`, built through the single
+  `StorageKeys` helper (`Backend.Core.Storage`) so the scheme has one definition.
+  The brand prefix is the storage analogue of the RLS `brand_id` filter —
+  structural isolation, never a caller-supplied path.
+- Method shape (host:port endpoint, app owns the SSL/scheme decision):
+  `PutAsync(key, byte[] content, contentType) → storedKey`,
+  `ExistsAsync(key) → bool`, `ListAsync(prefix) → keys`. Bucket is ensured on
+  first write.
+- **Idempotency (DL-022):** the asset id is derived deterministically from the
+  run id (`DeterministicGuid.From(runId, "asset")`), so a retried Hangfire
+  segment overwrites the same key instead of duplicating the object. A storage
+  failure surfaces as a `ToolError` on `RunState.Errors`, never an exception into
+  the graph.
+- `LocalStorage` (in-memory) for tests; real MinIO via Testcontainers for the
+  `Category=Storage` suite.
 - Serves assets via presigned URLs (`GET /assets/{id}`).
 
 ### `IRetrievalService` (DL-010)
