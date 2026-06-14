@@ -34,6 +34,11 @@
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.0" />
     <PackageVersion Include="Hangfire.AspNetCore" Version="1.8.14" />
     <PackageVersion Include="Hangfire.PostgreSql" Version="1.20.10" />
+    <!-- Microsoft Agent Framework: intra-segment supervised agent graph (DL-018).
+         "MAF 1.0" = the 1.x GA line (GA 2 Apr 2026); pinned to the latest stable
+         1.x at wire-in time. The durable pause/resume stays in the AgentRun state
+         machine (DL-015) — MAF runs only inside a job segment. -->
+    <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.10.0" />
     <PackageVersion Include="VaultSharp" Version="1.17.5.1" />
     <PackageVersion Include="Minio" Version="6.0.3" />
     <PackageVersion Include="Serilog.AspNetCore" Version="8.0.3" />

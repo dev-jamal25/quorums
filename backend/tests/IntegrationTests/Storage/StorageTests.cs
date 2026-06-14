@@ -3,7 +3,7 @@ using Backend.Core.Orchestration;
 using Backend.Core.Orchestration.Contracts;
 using Backend.Core.Storage;
 using Backend.Infrastructure.Integrations.Meta;
-using Backend.Infrastructure.Orchestration;
+using Backend.Infrastructure.Orchestration.Maf;
 using Backend.Infrastructure.Tracing;
 using Xunit;
 
@@ -41,7 +41,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
-        var orchestrator = new StubOrchestrator(
+        var orchestrator = new MafOrchestrator(
             _fixture.Storage, new MockMetaIntegration(), new LocalTraceRecorder());
 
         var result = await orchestrator.RunGenerationAsync(state);
@@ -58,7 +58,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandA = Guid.NewGuid();
         var brandB = Guid.NewGuid();
-        var orchestrator = new StubOrchestrator(
+        var orchestrator = new MafOrchestrator(
             _fixture.Storage, new MockMetaIntegration(), new LocalTraceRecorder());
 
         var result = await orchestrator.RunGenerationAsync(NewState(brandA));
@@ -76,7 +76,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
-        var orchestrator = new StubOrchestrator(
+        var orchestrator = new MafOrchestrator(
             _fixture.Storage, new MockMetaIntegration(), new LocalTraceRecorder());
 
         var first = await orchestrator.RunGenerationAsync(state);

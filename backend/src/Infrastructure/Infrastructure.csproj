@@ -17,6 +17,7 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Hangfire.AspNetCore" />
     <PackageReference Include="Hangfire.PostgreSql" />
+    <PackageReference Include="Microsoft.Agents.AI.Workflows" />
     <!-- Design-time only: the IDesignTimeDbContextFactory + migrations tooling.
          PrivateAssets=all keeps it out of Api/Worker publish output. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
