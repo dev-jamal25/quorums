@@ -1,5 +1,6 @@
 using Backend.Core.Orchestration;
 using Backend.Core.Storage;
+using Backend.Infrastructure.Orchestration.Maf;
 using Backend.Infrastructure.Orchestration.Maf.Nodes;
 using Backend.Infrastructure.Tracing;
 using Backend.IntegrationTests.Support;
@@ -107,5 +108,70 @@ public sealed class MafNodeTests
 
         var keys = await storage.ListAsync(StorageKeys.AssetPrefix(brandId));
         Assert.Single(keys); // idempotent write keyed by deterministic asset id (DL-022)
+    }
+
+    [Fact]
+    public async Task SupervisorEntry_sets_strategy_phase_and_records_no_span()
+    {
+        var node = new SupervisorEntryExecutor();
+        var input = Base(Guid.NewGuid(), Guid.NewGuid()) with { Phase = GraphPhase.Done };
+
+        var result = await node.HandleAsync(input, context: null!, CancellationToken.None);
+
+        Assert.Equal(GraphPhase.Strategy, result.Phase);
+        Assert.Empty(result.Trace.Spans);
+    }
+
+    /// <summary>
+    /// Runs strategy → creative sequentially, then forks copywriting and media off the same
+    /// post-creative state — exactly what the fan-out delivers to both branches.
+    /// </summary>
+    private static async Task<(RunState Copy, RunState Media)> ForkBranchesAsync(Guid runId, Guid brandId)
+    {
+        var trace = new LocalTraceRecorder();
+        var s0 = Base(runId, brandId);
+        s0 = await new ContentStrategistExecutor(trace).RunAsync(s0);
+        s0 = await new CreativeDirectorExecutor(trace).RunAsync(s0);
+
+        var copy = await new CopywritingExecutor(trace).RunAsync(s0);
+        var media = await new MediaGenerationExecutor(new InMemoryStorageService(), trace).RunAsync(s0);
+        return (copy, media);
+    }
+
+    [Fact]
+    public async Task Assembly_merges_fork_branches_into_awaiting_approval_draft_with_unioned_trace()
+    {
+        var (copy, media) = await ForkBranchesAsync(Guid.NewGuid(), Guid.NewGuid());
+
+        var merged = AssemblyMerge.Fold(null, copy);
+        merged = AssemblyMerge.Fold(merged, media);
+
+        Assert.Equal(GraphPhase.AwaitingApproval, merged.Phase);
+        Assert.NotNull(merged.Caption);
+        Assert.NotNull(merged.Media);
+        Assert.NotNull(merged.Draft);
+        Assert.Equal("pending", merged.Draft!.Status);
+
+        // Four unioned spans (strategy, creative, copywriting, media), no duplicates, and the
+        // id list stays in lockstep with the detail list (the trace surface contract).
+        Assert.Equal(4, merged.Trace.Spans.Count);
+        Assert.Equal(merged.Trace.Spans.Count, merged.Trace.SpanIds.Count);
+        Assert.Equal(merged.Trace.Spans.Count, merged.Trace.Spans.Select(s => s.SpanId).Distinct().Count());
+        Assert.Contains(merged.Trace.Spans, s => s.Node == "strategy");
+        Assert.Contains(merged.Trace.Spans, s => s.Node == "media" && s.Tool == "minio.put");
+    }
+
+    [Fact]
+    public async Task Assembly_merge_is_order_independent()
+    {
+        var (copy, media) = await ForkBranchesAsync(Guid.NewGuid(), Guid.NewGuid());
+
+        var copyFirst = AssemblyMerge.Fold(AssemblyMerge.Fold(null, copy), media);
+        var mediaFirst = AssemblyMerge.Fold(AssemblyMerge.Fold(null, media), copy);
+
+        Assert.Equal(copyFirst.Caption, mediaFirst.Caption);
+        Assert.Equal(copyFirst.Media, mediaFirst.Media);
+        Assert.Equal(copyFirst.Draft!.Status, mediaFirst.Draft!.Status);
+        Assert.Equal(copyFirst.Trace.Spans.Count, mediaFirst.Trace.Spans.Count);
     }
 }
