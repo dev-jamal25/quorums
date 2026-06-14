@@ -1,4 +1,8 @@
 using Backend.Core.Domain;
+using Backend.Core.Knowledge;
+using Backend.Core.Multitenancy;
+using Backend.Infrastructure.Knowledge;
+using Backend.Infrastructure.Multitenancy;
 using Backend.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -30,6 +34,10 @@ public sealed class KnowledgeFixture : IAsyncLifetime
         .WithImage("pgvector/pgvector:pg16")
         .Build();
 
+    // One deterministic embedder shared by ingest + retrieval so a seeded doc and a query
+    // of the same vocabulary land near each other (the relevance proof relies on it).
+    private readonly DeterministicEmbeddingProvider _embeddings = new();
+
     public string SuperuserConnectionString { get; private set; } = string.Empty;
 
     public string AppUserConnectionString { get; private set; } = string.Empty;
@@ -56,6 +64,18 @@ public sealed class KnowledgeFixture : IAsyncLifetime
     /// <summary>A context on the RLS-subject role with no brand bound — used for catalog
     /// metadata reads and (with the superuser) cross-brand ownership checks in tests.</summary>
     public AppDbContext CreateAppContext() => CreateDbContext(AppUserConnectionString);
+
+    /// <summary>An ingest service on the RLS-subject role bound to <paramref name="brandId"/>
+    /// (the real BrandScope binding path), using the deterministic offline embedder.</summary>
+    public (AppDbContext Db, IBrandScope Scope, IKnowledgeIngestService Ingest) CreateIngest(Guid brandId)
+    {
+        var db = CreateDbContext(AppUserConnectionString);
+        var brandContext = new BrandContext();
+        brandContext.Bind(brandId);
+        var scope = new BrandScope(db, brandContext);
+        var ingest = new KnowledgeIngestService(db, new TypeDispatchedChunker(), _embeddings);
+        return (db, scope, ingest);
+    }
 
     internal static AppDbContext CreateDbContext(string connectionString)
     {
