@@ -342,7 +342,7 @@ public Task<RunState> RunPublishAsync(RunState state, CancellationToken ct = def
     => MafWorkflowRunner.RunToOutputAsync(PublishWorkflowFactory.Build(_meta, _trace), state, ct);
 ```
 
-- [ ] **Step 4a: Verify trace concurrency under fan-out.** The Copywriting ∥ Media fork runs two branches in parallel, so two `ITrace.RecordAsync` calls can be in flight at once. If the DI-registered `ITrace` writes through a **shared `DbContext`**, parallel calls throw *"A second operation was started on this context before a previous operation completed."* `LocalTraceRecorder` (unit tests) sidesteps this; the **production tracer must not** rely on that. Confirm the registered `ITrace` is either functional (no shared mutable state) or resolves a **per-operation `DbContext`** inside `RecordAsync` (a scoped factory, not a captured field); fix it if it captures a shared context. Add a parallel-write test against the **production** `ITrace` implementation (not just `LocalTraceRecorder`):
+- [x] **Step 4a: Verify trace concurrency under fan-out — DONE.** **Finding:** neither production `ITrace` impl touches a `DbContext` inside `RecordAsync` — `LangfuseTrace` is a typed-`HttpClient` client folding via the pure `TraceAssembler`, and `LocalTraceRecorder` is pure — so the shared-`DbContext` hazard below does not exist in this codebase. Proven (not assumed) by `Tracing/TraceConcurrencyTests.cs`: two concurrent `RecordAsync` calls on the **real** `LangfuseTrace` both produce intact traces, and a failed best-effort post degrades-not-throws even when the calls overlap. The Copywriting ∥ Media fork runs two branches in parallel, so two `ITrace.RecordAsync` calls can be in flight at once. If the DI-registered `ITrace` writes through a **shared `DbContext`**, parallel calls throw *"A second operation was started on this context before a previous operation completed."* `LocalTraceRecorder` (unit tests) sidesteps this; the **production tracer must not** rely on that. Confirm the registered `ITrace` is either functional (no shared mutable state) or resolves a **per-operation `DbContext`** inside `RecordAsync` (a scoped factory, not a captured field); fix it if it captures a shared context. Add a parallel-write test against the **production** `ITrace` implementation (not just `LocalTraceRecorder`):
 
 ```csharp
 // Two concurrent RecordAsync calls on the registered tracer must both succeed.
@@ -533,10 +533,10 @@ public sealed class MafResumeSeamTests : IClassFixture<DurabilityFixture>
 - **Gate evidence:**
   - `dotnet build Backend.sln -warnaserror` → **Build succeeded**, 0 warnings.
   - `dotnet format Backend.sln --verify-no-changes` → **clean**.
-  - `dotnet test Backend.sln` → **50 passed / 0 failed** (UnitTests 17, IntegrationTests 33).
+  - `dotnet test Backend.sln` → **52 passed / 0 failed** (UnitTests 17, IntegrationTests 35).
   - `Category=Durability` (incl. `MafResumeSeamTests`, `MafOrchestratorIdempotencyTests`, `MafNodeTests`) → green.
   - `Category=Isolation` → **10 passed**, zero cross-brand leakage.
-  - `Category=Trace` / `Category=Publish` / `Category=Storage` → green through the MAF graph.
+  - `Category=Trace` (incl. `TraceConcurrencyTests` proving the production `LangfuseTrace` survives parallel fan-out writes) / `Category=Publish` / `Category=Storage` → green through the MAF graph.
   - `gitleaks` → pre-commit hook **Passed** on every commit (standalone CLI not installed in this environment).
 - **Adversarial proof result (`MafResumeSeamTests`):** ExecuteRun ×2 (kill + Hangfire retry) → 1 checkpoint, 1 asset, `AwaitingApproval`; approve; ResumeRun ×2 (kill + retry) → `Done`, deterministic `mock://meta/…` ref, no second publish, `Spans.Count == SpanIds.Count`, one trace id across the seam.
 
