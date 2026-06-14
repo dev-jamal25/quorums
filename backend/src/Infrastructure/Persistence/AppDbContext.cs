@@ -50,6 +50,27 @@ public sealed class AppDbContext : DbContext
         modelBuilder.Entity<ContentItem>().Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
         modelBuilder.Entity<ApprovalAction>().Property(e => e.Decision).HasConversion<string>().HasMaxLength(16);
 
+        // RAG schema (DL-016, DL-026). The pgvector extension is created by the migration;
+        // the generated tsvector column + HNSW/GIN indexes are added via raw migrationBuilder.Sql.
+        modelBuilder.HasPostgresExtension("vector");
+
+        modelBuilder.Entity<KnowledgeDoc>(entity =>
+        {
+            entity.Property(e => e.DocType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.Facet).HasConversion<string>().HasMaxLength(16);
+            entity.Property(e => e.Metadata).HasColumnType("jsonb");
+        });
+
+        modelBuilder.Entity<KnowledgeChunk>(entity =>
+        {
+            entity.Property(e => e.DocType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.Facet).HasConversion<string>().HasMaxLength(16);
+            entity.Property(e => e.Embedding).HasColumnType($"vector({KnowledgeChunk.EmbeddingDimension})");
+            entity.Property(e => e.Metadata).HasColumnType("jsonb");
+            // search_vector is a generated column added by raw SQL in the migration and
+            // intentionally NOT mapped here (slice 2). It self-maintains; slice 3 maps it.
+        });
+
         // Every brand-scoped table gets an index on its RLS predicate column.
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {

@@ -11,6 +11,7 @@ using Backend.Infrastructure.Tracing;
 using Backend.IntegrationTests.Support;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Pgvector.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -144,7 +145,7 @@ public sealed class DurabilityFixture : IAsyncLifetime
     private static AppDbContext CreateDbContext(string connectionString)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(connectionString)
+            .UseNpgsql(connectionString, o => o.UseVector())
             .Options;
         return new AppDbContext(options);
     }
