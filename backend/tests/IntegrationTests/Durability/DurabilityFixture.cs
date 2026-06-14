@@ -5,7 +5,7 @@ using Backend.Core.Orchestration;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Multitenancy;
-using Backend.Infrastructure.Orchestration;
+using Backend.Infrastructure.Orchestration.Maf;
 using Backend.Infrastructure.Persistence;
 using Backend.Infrastructure.Tracing;
 using Backend.IntegrationTests.Support;
@@ -96,7 +96,7 @@ public sealed class DurabilityFixture : IAsyncLifetime
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new StubOrchestrator(
+        var orchestrator = new MafOrchestrator(
             new InMemoryStorageService(), new MockMetaIntegration(), new LocalTraceRecorder());
         return (db, new ExecuteRunJob(db, scope, brandContext, orchestrator));
     }
@@ -107,7 +107,7 @@ public sealed class DurabilityFixture : IAsyncLifetime
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new StubOrchestrator(
+        var orchestrator = new MafOrchestrator(
             new InMemoryStorageService(), new MockMetaIntegration(), new LocalTraceRecorder());
         return (db, new ResumeRunJob(db, scope, brandContext, orchestrator));
     }
