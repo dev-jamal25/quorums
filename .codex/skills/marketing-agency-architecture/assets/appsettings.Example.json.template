@@ -45,12 +45,18 @@
   },
 
   "Embeddings": {
-    "BaseUrl": "http://embeddings:11434",
+    "Endpoint": "tei-embed:80",
+    "_endpointNote": "host:port only — no http:// prefix; the application prepends the scheme. DL-024: served by HF TEI container.",
     "Model": "nomic-embed-text-v1.5",
     "Dimension": 768,
     "_dimensionRule": "MUST equal the pgvector column dimension set in the EF migration",
-    "_prefixes": "search_document: on ingest, search_query: on queries (mandatory)",
+    "_prefixes": "search_document: on ingest, search_query: on queries (mandatory — TEI does not apply prefixes)",
     "_distance": "cosine (vector_cosine_ops); normalize embeddings"
+  },
+
+  "Reranker": {
+    "Endpoint": "tei-rerank:80",
+    "_endpointNote": "host:port only — no http:// prefix. DL-025: BAAI/bge-reranker-v2-m3 cross-encoder via /rerank."
   },
 
   "Meta": {

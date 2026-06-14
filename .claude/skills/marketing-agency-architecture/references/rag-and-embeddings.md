@@ -25,11 +25,14 @@ Governs the brand-knowledge RAG and the embedding runtime. Immutable input.
 ## Embedding runtime (DL-016)
 
 - Model: **nomic-embed-text-v1.5**, self-hosted, open-source.
-- Served over **HTTP** from a local model-server container (`embeddings` service;
-  Ollama as the default runner; HF Text-Embeddings-Inference an alternative if a
-  reranker is later co-hosted).
-- Called from .NET via `IEmbeddingProvider` (`NomicEmbeddingProvider`), with a mock
-  for CI. The model stays **out of the .NET process** (no ONNX/tokenizer wiring).
+- Served over **HTTP** from `tei-embed` (`ghcr.io/huggingface/text-embeddings-inference:cpu-1.6`,
+  `--model-id nomic-ai/nomic-embed-text-v1.5`) on port 80. DL-024 chose HF TEI over Ollama
+  to co-host the cross-encoder reranker (DL-025: `tei-rerank`, `BAAI/bge-reranker-v2-m3`).
+- Called from .NET via `IEmbeddingProvider` (`NomicEmbeddingProvider`, endpoint `tei-embed:80`),
+  with a mock for CI. The model stays **out of the .NET process** (no ONNX/tokenizer wiring).
+- Config key is `Embeddings__Endpoint=tei-embed:80` (host:port only; the app prepends `http://`).
+  Reranker: `Reranker__Endpoint=tei-rerank:80` (same convention). **TEI does not apply task
+  prefixes** — `NomicEmbeddingProvider` must prepend `search_document:` / `search_query:`.
 
 ### Know-your-model constraints (review gotchas — enforce all)
 

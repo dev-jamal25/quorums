@@ -37,7 +37,9 @@ public static class HealthCheckRegistration
         var minioEndpoint = configuration["Minio:Endpoint"] ?? "minio:9000";
         var vaultAddress = configuration["Vault:Address"] ?? "vault:8200";
         var vaultEnabled = configuration.GetValue<bool>("Vault:Enabled", false);
-        var embeddingsBaseUrl = configuration["Embeddings:BaseUrl"] ?? "http://embeddings:11434";
+        // host:port only — this method prepends http:// (see convention above).
+        var embeddingsEndpoint = configuration["Embeddings:Endpoint"] ?? "tei-embed:80";
+        var rerankerEndpoint = configuration["Reranker:Endpoint"] ?? "tei-rerank:80";
 
         // Langfuse is optional: configured only when the base URL and both keys are
         // present. BaseUrl is a full URL (an API base), not a host:port endpoint.
@@ -49,7 +51,8 @@ public static class HealthCheckRegistration
 
         var minioHealthUri = new Uri($"http://{minioEndpoint}/minio/health/live");
         var vaultHealthUri = new Uri($"http://{vaultAddress.TrimEnd('/')}/v1/sys/health");
-        var embeddingsHealthUri = new Uri($"{embeddingsBaseUrl.TrimEnd('/')}/");
+        var embeddingsHealthUri = new Uri($"http://{embeddingsEndpoint}/health");
+        var rerankerHealthUri = new Uri($"http://{rerankerEndpoint}/health");
 
         var builder = services.AddHealthChecks()
             // Liveness: the process is up and serving. Always healthy if reached.
@@ -71,6 +74,10 @@ public static class HealthCheckRegistration
             .AddUrlGroup(
                 embeddingsHealthUri,
                 name: "embeddings",
+                tags: [ReadyTag])
+            .AddUrlGroup(
+                rerankerHealthUri,
+                name: "reranker",
                 tags: [ReadyTag]);
 
         // Vault is optional: only probe it when Vault:Enabled=true. A disabled

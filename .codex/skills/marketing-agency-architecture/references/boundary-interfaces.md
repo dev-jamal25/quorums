@@ -51,15 +51,39 @@ needed. A boundary interface + mock + registration template is in
 
 - One interface; `MockMetaIntegration` returns realistic publish/ads responses;
   `LiveMetaIntegration` is optional/bonus, selected via settings.
-- Methods cover publish and the designed-for token refresh/revoke lifecycle.
+- Method shape: `PublishAsync(PublishRequest) → PublishResult`, where
+  `PublishRequest { brandId, contentItemId, caption, mediaStorageKey? }` and
+  `PublishResult { externalRef?, status, error? }`. The two impls are registered
+  Singleton, selected once from `Meta:Mode` (`mock` → `MockMetaIntegration`,
+  `live` → `LiveMetaIntegration`); an unknown mode fails fast at resolve.
+- **Idempotency (DL-022):** the mock derives `externalRef` deterministically from
+  `contentItemId` (the run id) — `mock://meta/{id}` — so a retried publish re-uses
+  the same ref instead of posting twice. The job-level Publishing-only guard plus
+  the `→ Done` transition already prevent a second `ResumeRun` from publishing.
+- Publishing only ever runs in the `ResumeRun` segment, after an approval record
+  exists (DL-005). A publish failure surfaces as a `ToolError` on
+  `RunState.Errors`, never an exception into the graph.
 - **Token decrypt happens only here, at call time** (see `isolation-and-secrets.md`).
 - A full run completes with **zero live Meta calls** when the mock is selected.
 
 ### `IStorageService` (DL-009)
 
 - `MinioStorage` (default) uses the Minio .NET SDK; keys are
-  `brands/{brand_id}/assets/{asset_id}`, prefix derived from `IBrandContext`.
-- `LocalStorage` for tests.
+  `brands/{brand_id}/assets/{asset_id}.{ext}`, built through the single
+  `StorageKeys` helper (`Backend.Core.Storage`) so the scheme has one definition.
+  The brand prefix is the storage analogue of the RLS `brand_id` filter —
+  structural isolation, never a caller-supplied path.
+- Method shape (host:port endpoint, app owns the SSL/scheme decision):
+  `PutAsync(key, byte[] content, contentType) → storedKey`,
+  `ExistsAsync(key) → bool`, `ListAsync(prefix) → keys`. Bucket is ensured on
+  first write.
+- **Idempotency (DL-022):** the asset id is derived deterministically from the
+  run id (`DeterministicGuid.From(runId, "asset")`), so a retried Hangfire
+  segment overwrites the same key instead of duplicating the object. A storage
+  failure surfaces as a `ToolError` on `RunState.Errors`, never an exception into
+  the graph.
+- `LocalStorage` (in-memory) for tests; real MinIO via Testcontainers for the
+  `Category=Storage` suite.
 - Serves assets via presigned URLs (`GET /assets/{id}`).
 
 ### `IRetrievalService` (DL-010)

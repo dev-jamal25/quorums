@@ -57,8 +57,10 @@ Default to 768 unless the architect specifies otherwise.
 
 ### C. Embedding model server runner
 
-Default **Ollama**. HF Text-Embeddings-Inference is the documented alternative if a
-reranker is later co-hosted. Default to Ollama unless told.
+**Decided (DL-024/DL-025): HF Text Embeddings Inference.** Two containers:
+`tei-embed` (`nomic-ai/nomic-embed-text-v1.5`) for embeddings and `tei-rerank`
+(`BAAI/bge-reranker-v2-m3`) for cross-encoder reranking. Ollama was the prior
+default (DL-016) and is superseded. Do not revert to Ollama.
 
 ## Flagged for re-pacing (not an architecture gap)
 
