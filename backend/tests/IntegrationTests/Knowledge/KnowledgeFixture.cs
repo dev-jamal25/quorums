@@ -78,8 +78,12 @@ public sealed class KnowledgeFixture : IAsyncLifetime
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
 
     /// <summary>A context on the RLS-subject role with no brand bound — used for catalog
-    /// metadata reads and (with the superuser) cross-brand ownership checks in tests.</summary>
+    /// metadata reads. (With no brand bound it sees zero rows; that is RLS doing its job.)</summary>
     public AppDbContext CreateAppContext() => CreateDbContext(AppUserConnectionString);
+
+    /// <summary>A context on the superuser, which bypasses RLS and sees every brand's rows.
+    /// Used only to verify chunk ownership across brands in the leakage proof — never the app path.</summary>
+    public AppDbContext CreateSuperuserContext() => CreateDbContext(SuperuserConnectionString);
 
     /// <summary>An ingest service on the RLS-subject role bound to <paramref name="brandId"/>
     /// (the real BrandScope binding path), using the deterministic offline embedder.</summary>
