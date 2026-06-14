@@ -39,6 +39,7 @@ public static class HealthCheckRegistration
         var vaultEnabled = configuration.GetValue<bool>("Vault:Enabled", false);
         // host:port only — this method prepends http:// (see convention above).
         var embeddingsEndpoint = configuration["Embeddings:Endpoint"] ?? "tei-embed:80";
+        var embeddingsMode = (configuration["Embeddings:Mode"] ?? "nomic").Trim().ToLowerInvariant();
         var rerankerEndpoint = configuration["Reranker:Endpoint"] ?? "tei-rerank:80";
 
         // Langfuse is optional: configured only when the base URL and both keys are
@@ -72,13 +73,16 @@ public static class HealthCheckRegistration
                 name: "minio",
                 tags: [ReadyTag])
             .AddUrlGroup(
-                embeddingsHealthUri,
-                name: "embeddings",
-                tags: [ReadyTag])
-            .AddUrlGroup(
                 rerankerHealthUri,
                 name: "reranker",
                 tags: [ReadyTag]);
+
+        // Embeddings (tei-embed) is probed only in nomic mode. A mock-mode deployment has
+        // no model server, so its absence must not report /health Unhealthy (mirrors Vault).
+        if (embeddingsMode != "mock")
+        {
+            builder.AddUrlGroup(embeddingsHealthUri, name: "embeddings", tags: [ReadyTag]);
+        }
 
         // Vault is optional: only probe it when Vault:Enabled=true. A disabled
         // Vault is not a readiness concern and must not cause /health to report

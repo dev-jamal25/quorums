@@ -1,10 +1,12 @@
 using Backend.Core.Domain;
 using Backend.Core.Knowledge;
 using Backend.Core.Multitenancy;
+using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Knowledge;
 using Backend.Infrastructure.Multitenancy;
 using Backend.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Pgvector.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
@@ -75,6 +77,19 @@ public sealed class KnowledgeFixture : IAsyncLifetime
         var scope = new BrandScope(db, brandContext);
         var ingest = new KnowledgeIngestService(db, new TypeDispatchedChunker(), _embeddings);
         return (db, scope, ingest);
+    }
+
+    /// <summary>A dense retrieval service on the RLS-subject role bound to <paramref name="brandId"/>,
+    /// sharing the same deterministic embedder as ingest (so a seeded doc and a query of the
+    /// same vocabulary are nearest neighbours). Default RetrievalOptions = dense-only.</summary>
+    public (AppDbContext Db, IBrandScope Scope, IRetrievalService Retrieval) CreateRetrieval(Guid brandId)
+    {
+        var db = CreateDbContext(AppUserConnectionString);
+        var brandContext = new BrandContext();
+        brandContext.Bind(brandId);
+        var scope = new BrandScope(db, brandContext);
+        var retrieval = new PgVectorRetrieval(db, _embeddings, Options.Create(new RetrievalOptions()));
+        return (db, scope, retrieval);
     }
 
     internal static AppDbContext CreateDbContext(string connectionString)

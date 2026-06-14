@@ -18,6 +18,7 @@ public static class KnowledgeServiceCollectionExtensions
     {
         services.AddSingleton<IKnowledgeChunker, TypeDispatchedChunker>();
         services.AddScoped<IKnowledgeIngestService, KnowledgeIngestService>();
+        services.AddScoped<IRetrievalService, PgVectorRetrieval>();
 
         var mode = (configuration["Embeddings:Mode"] ?? "nomic").Trim().ToLowerInvariant();
         if (mode == "mock")
