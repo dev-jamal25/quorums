@@ -32,46 +32,42 @@ cp .env.example .env   # fill in values (no secrets are committed)
 docker compose up
 ```
 
-### Local dev setup — embeddings
+### Local dev setup — embeddings and reranker (DL-024/DL-025)
 
-The `embeddings` service (Ollama) is behind a Compose profile and **not** started
-by default. The recommended path is to install Ollama directly on the host so
-models persist across rebuilds and avoid running a container for something the host
-can serve natively.
+Two HF Text Embeddings Inference containers (`tei-embed` and `tei-rerank`) are
+started automatically by `docker compose up`. They download model weights on first
+start — allow up to 2–5 minutes on a fresh volume before the health checks pass
+and `api`/`worker` start.
 
-**a) Install Ollama on the host**
+**Model weights are cached in named Docker volumes** (`tei-embed-cache`,
+`tei-rerank-cache`) so subsequent `docker compose up` runs start in seconds.
 
-Download and run the installer from <https://ollama.com/download> (macOS, Linux,
-Windows). Ollama starts an HTTP server on port 11434 automatically.
-
-**b) Pull the embedding model**
+**Endpoints (host port mapping for local curl):**
 
 ```bash
-ollama pull nomic-embed-text
+# embedding health
+curl http://localhost:8090/health
+
+# reranker health
+curl http://localhost:8091/health
+
+# embed a string (768-dim vector)
+curl -s http://localhost:8090/embed \
+  -H 'Content-Type: application/json' \
+  -d '{"inputs": "search_query: test"}'
+
+# rerank a query+texts
+curl -s http://localhost:8091/rerank \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "marketing strategy", "texts": ["brand guidelines", "budget plan"]}'
 ```
 
-**c) Confirm the model is available**
+Config keys (`host:port` only — app prepends `http://`):
 
-```bash
-curl http://localhost:11434/api/tags
 ```
-
-You should see `nomic-embed-text` listed in the response.
-
-**d) (Optional) Run Ollama inside Compose instead**
-
-If you prefer to keep everything in containers, opt in via the `embeddings`
-profile and update `EMBEDDINGS_URL` in your `.env`:
-
-```bash
-# in .env:
-# Embeddings__BaseUrl=http://embeddings:11434
-
-docker compose --profile embeddings up
+Embeddings__Endpoint=tei-embed:80
+Reranker__Endpoint=tei-rerank:80
 ```
-
-The embeddings health check probes `EMBEDDINGS_URL` regardless of which path you
-choose — the abstraction handles the swap.
 
 <!-- TODO: first-run notes (migrations, MinIO bucket, Vault init). -->
 

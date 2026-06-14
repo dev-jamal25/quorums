@@ -1,6 +1,6 @@
 ---
 name: marketing-agency-architecture
-description: Encodes the frozen Phase 1 architecture of the Autonomous Digital Marketing Agency capstone (.NET 10 / ASP.NET Core, eight-service Docker Compose, Postgres Row-Level-Security multi-brand isolation, Hangfire durable agent runs with checkpoint/resume, Vault KV plus Transit secrets, MinIO storage, pgvector RAG with self-hosted nomic-embed-text-v1.5, React/Next.js frontend) so an IDE coding agent implements it without re-deciding anything. Use when implementing this capstone: scaffolding the Backend.sln solution, writing EF Core models and RLS migrations, wiring the six boundary interfaces, building the queue plus worker run pipeline, adding brand-knowledge RAG, or following the vertical-slice build order. Trigger phrases include 'implement the capstone', 'scaffold the marketing agency', 'set up RLS brand isolation', 'wire the Hangfire worker', 'build the agent run pipeline', 'add the brand-knowledge RAG'.
+description: Encodes the frozen Phase 1 architecture of the Autonomous Digital Marketing Agency capstone (.NET 10 / ASP.NET Core, nine-service Docker Compose, Postgres Row-Level-Security multi-brand isolation, Hangfire durable agent runs with checkpoint/resume, Vault KV plus Transit secrets, MinIO storage, pgvector RAG with self-hosted nomic-embed-text-v1.5 via HF TEI, React/Next.js frontend) so an IDE coding agent implements it without re-deciding anything. Use when implementing this capstone: scaffolding the Backend.sln solution, writing EF Core models and RLS migrations, wiring the six boundary interfaces, building the queue plus worker run pipeline, adding brand-knowledge RAG, or following the vertical-slice build order. Trigger phrases include 'implement the capstone', 'scaffold the marketing agency', 'set up RLS brand isolation', 'wire the Hangfire worker', 'build the agent run pipeline', 'add the brand-knowledge RAG'.
 metadata:
   author: dev-jamal25
   version: 1.0.0
@@ -21,7 +21,7 @@ The decisions here are **frozen**. Do not re-design, re-decide, optimize, or add
 architecture. Specifically:
 
 - Do not substitute libraries, services, or patterns for "better" ones.
-- Do not collapse, merge, or skip any of the eight services.
+- Do not collapse, merge, or skip any of the nine services.
 - Do not replace Postgres RLS with application-layer `WHERE` filtering.
 - Do not move secrets out of Vault, or store Meta tokens as anything but
   Transit-encrypted ciphertext in the RLS-scoped table.
@@ -53,9 +53,9 @@ explicit instruction** — never as an automatic time-saving choice.
 - **Stack:** .NET 10 LTS / ASP.NET Core Web API + .NET Worker Service; React/Next.js
   (TypeScript) frontend. One `Backend.sln`, layered `Api` / `Worker` / `Core` /
   `Infrastructure`, built from one publish output (zero API↔worker skew).
-- **Eight services, one `docker-compose.yml`:** `api`, `worker`, `frontend`,
-  `postgres` (pgvector), `redis`, `minio`, `vault`, `embeddings` (local model
-  server). Full service table in `references/stack-and-topology.md`.
+- **Nine services, one `docker-compose.yml`:** `api`, `worker`, `frontend`,
+  `postgres` (pgvector), `redis`, `minio`, `vault`, `tei-embed`, `tei-rerank`.
+  Full service table in `references/stack-and-topology.md`.
 - **Orchestration brain:** Claude (MCP-native). **Media tool:** Gemini, called
   behind `IMediaGenerationTool`. No model other than Claude orchestrates.
 - **Demo target:** `docker compose up`; no public URL required. Mocked Meta
@@ -70,11 +70,12 @@ Browser → frontend (Next.js) → api (ASP.NET Core) ──enqueue──▶ Han
         redis (IDistributedCache, not the queue broker)           │    ├─▶ vault (KV + Transit)
                                                                    │    ├─▶ Claude API
                                                                    │    ├─▶ Gemini API
-                                                                   │    ├─▶ embeddings (nomic-v1.5)
+                                                                   │    ├─▶ tei-embed (nomic-v1.5)
+                                                                   │    ├─▶ tei-rerank (bge-reranker-v2-m3)
                                                                    │    └─▶ IMetaIntegration (mock|live)
 ```
 
-## Frozen decision map (DL-006 … DL-016)
+## Frozen decision map (DL-006 … DL-025)
 
 | DL | Decision | Reference file |
 |----|----------|----------------|
@@ -194,6 +195,114 @@ detail in `references/build-order.md`.
 - `assets/appsettings.Example.json.template` — documents every config key (no real
   secrets), the Options-pattern source.
 
+## Scaffold hardening — known-good patterns (2026-06-13)
+
+These were verified against live Docker Desktop / WSL2 failures; follow them
+exactly to avoid the same issues on a fresh clone.
+
+### Vault compose service (exact snippet)
+
+```yaml
+vault:
+  image: hashicorp/vault
+  cap_add: [IPC_LOCK]          # mlock where the kernel allows it
+  command: server -dev          # explicit dev-mode start
+  environment:
+    VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+    VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    SKIP_SETCAP: "true"         # Docker Desktop / WSL2 escape hatch (no CAP_SETFCAP)
+  ports:
+    - "8200:8200"
+```
+
+### Env value convention — host:port only, no scheme
+
+`*__Endpoint` and `*__Address` config values **store `host:port` only** — no
+`http://` prefix. The application is the sole owner of the scheme prefix.
+Breaking this rule produces double-schemed URLs (`http://http://...`).
+
+```
+Minio__Endpoint=minio:9000          # ✅  host:port only
+Vault__Address=vault:8200           # ✅  host:port only
+Minio__Endpoint=http://minio:9000   # ❌  never include scheme in config
+```
+
+The health-check registration and `VaultConfigurationExtensions` both prepend
+`http://` at usage time — never store the scheme in config.
+
+### Health checks — optional deps gated on their feature flag
+
+Register a dependency health check **only when the dependency is actually used**:
+
+```csharp
+if (configuration.GetValue<bool>("Vault:Enabled", false))
+{
+    builder.AddUrlGroup(vaultHealthUri, name: "vault", tags: [ReadyTag]);
+}
+```
+
+A disabled Vault (or other optional dep) must not cause `/health` to report
+`Unhealthy`. Apply the same if-block pattern to any future optional dependency.
+
+### TEI — two named-volume containers, health-gated startup (DL-024)
+
+Two HF Text Embeddings Inference containers replace the Ollama service and
+`ollama-init` one-shot. Each uses the same image with a different `--model-id`.
+Weights download on first start; a named volume persists the model cache so
+they are not re-downloaded on subsequent `docker compose up` runs.
+
+```yaml
+tei-embed:
+  image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+  command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5"]
+  volumes:
+    - tei-embed-cache:/data
+  healthcheck:
+    test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 20
+    start_period: 120s   # generous; first run downloads model weights
+
+tei-rerank:
+  image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+  command: ["--model-id", "BAAI/bge-reranker-v2-m3"]
+  volumes:
+    - tei-rerank-cache:/data
+  healthcheck:
+    test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 20
+    start_period: 120s
+```
+
+Api and worker wait on both containers to be **healthy** before starting:
+
+```yaml
+api:
+  depends_on:
+    tei-embed:
+      condition: service_healthy
+    tei-rerank:
+      condition: service_healthy
+```
+
+Config endpoints are host:port only (no scheme — the app prepends `http://`):
+
+```
+Embeddings__Endpoint=tei-embed:80
+Reranker__Endpoint=tei-rerank:80
+```
+
+### Frontend Dockerfile — public/ must exist
+
+`frontend/public/` must exist in the source tree; the Dockerfile COPY fails
+silently or errors if the directory is absent. Commit `frontend/public/.gitkeep`
+so the directory is always present.
+
+---
+
 ## Common pitfalls (fail the review if violated)
 
 - **Session-scoped `set_config` instead of transaction-scoped** → pool bleed
@@ -211,6 +320,15 @@ detail in `references/build-order.md`.
 - **A brand-scoped entity without an RLS policy** → every domain entity except
   `Brand` carries `brand_id` and a policy; a table without one must be justified
   in its migration.
+- **Scheme in a `*__Endpoint` or `*__Address` config value** → double-schemed URL.
+  Store host:port only; the application owns the `http://` prefix.
+- **Vault health check always registered** → `/health` returns Unhealthy in the
+  default dev setup where Vault is disabled. Gate the check on `Vault:Enabled`.
+- **TEI weights not cached before app starts** → embedding/rerank requests timeout
+  on first run. Gate `api` and `worker` on `tei-embed: service_healthy` and
+  `tei-rerank: service_healthy`; give each healthcheck a generous `start_period`
+  (≥ 120s) to cover first-run weight download; persist cache in named volumes so
+  subsequent starts are fast.
 
 ## Example: implementing the RLS isolation layer (Day 2)
 

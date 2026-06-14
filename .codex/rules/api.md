@@ -20,4 +20,10 @@ paths:
 
 ## Responses
 - Never return secrets, tokens, or raw exception/stack detail. Errors are ProblemDetails.
-- Health endpoint stays dependency-light (liveness, not a full integration probe).
+- Health endpoints follow the liveness/readiness split:
+  - `/health/live` is liveness-only — cheap, dependency-free, safe for orchestrator restart probes.
+  - `/health/ready` performs full dependency checks (postgres, redis, minio, vault, embeddings)
+    and is used by readiness probes and the local-dev gate.
+  - `/health` aliases `/health/ready` for convenience.
+  - Health responses never include exception text, stack traces, or secret material — only
+    `{status, description, durationMs}` per dependency.

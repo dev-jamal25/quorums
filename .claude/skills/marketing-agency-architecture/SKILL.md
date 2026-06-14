@@ -1,6 +1,6 @@
 ---
 name: marketing-agency-architecture
-description: Encodes the frozen Phase 1 architecture of the Autonomous Digital Marketing Agency capstone (.NET 10 / ASP.NET Core, eight-service Docker Compose, Postgres Row-Level-Security multi-brand isolation, Hangfire durable agent runs with checkpoint/resume, Vault KV plus Transit secrets, MinIO storage, pgvector RAG with self-hosted nomic-embed-text-v1.5, React/Next.js frontend) so an IDE coding agent implements it without re-deciding anything. Use when implementing this capstone: scaffolding the Backend.sln solution, writing EF Core models and RLS migrations, wiring the six boundary interfaces, building the queue plus worker run pipeline, adding brand-knowledge RAG, or following the vertical-slice build order. Trigger phrases include 'implement the capstone', 'scaffold the marketing agency', 'set up RLS brand isolation', 'wire the Hangfire worker', 'build the agent run pipeline', 'add the brand-knowledge RAG'.
+description: Encodes the frozen Phase 1 architecture of the Autonomous Digital Marketing Agency capstone (.NET 10 / ASP.NET Core, nine-service Docker Compose, Postgres Row-Level-Security multi-brand isolation, Hangfire durable agent runs with checkpoint/resume, Vault KV plus Transit secrets, MinIO storage, pgvector RAG with self-hosted nomic-embed-text-v1.5 via HF TEI, React/Next.js frontend) so an IDE coding agent implements it without re-deciding anything. Use when implementing this capstone: scaffolding the Backend.sln solution, writing EF Core models and RLS migrations, wiring the six boundary interfaces, building the queue plus worker run pipeline, adding brand-knowledge RAG, or following the vertical-slice build order. Trigger phrases include 'implement the capstone', 'scaffold the marketing agency', 'set up RLS brand isolation', 'wire the Hangfire worker', 'build the agent run pipeline', 'add the brand-knowledge RAG'.
 metadata:
   author: dev-jamal25
   version: 1.0.0
@@ -21,7 +21,7 @@ The decisions here are **frozen**. Do not re-design, re-decide, optimize, or add
 architecture. Specifically:
 
 - Do not substitute libraries, services, or patterns for "better" ones.
-- Do not collapse, merge, or skip any of the eight services.
+- Do not collapse, merge, or skip any of the nine services.
 - Do not replace Postgres RLS with application-layer `WHERE` filtering.
 - Do not move secrets out of Vault, or store Meta tokens as anything but
   Transit-encrypted ciphertext in the RLS-scoped table.
@@ -53,9 +53,9 @@ explicit instruction** — never as an automatic time-saving choice.
 - **Stack:** .NET 10 LTS / ASP.NET Core Web API + .NET Worker Service; React/Next.js
   (TypeScript) frontend. One `Backend.sln`, layered `Api` / `Worker` / `Core` /
   `Infrastructure`, built from one publish output (zero API↔worker skew).
-- **Eight services, one `docker-compose.yml`:** `api`, `worker`, `frontend`,
-  `postgres` (pgvector), `redis`, `minio`, `vault`, `embeddings` (local model
-  server). Full service table in `references/stack-and-topology.md`.
+- **Nine services, one `docker-compose.yml`:** `api`, `worker`, `frontend`,
+  `postgres` (pgvector), `redis`, `minio`, `vault`, `tei-embed`, `tei-rerank`.
+  Full service table in `references/stack-and-topology.md`.
 - **Orchestration brain:** Claude (MCP-native). **Media tool:** Gemini, called
   behind `IMediaGenerationTool`. No model other than Claude orchestrates.
 - **Demo target:** `docker compose up`; no public URL required. Mocked Meta
@@ -70,11 +70,12 @@ Browser → frontend (Next.js) → api (ASP.NET Core) ──enqueue──▶ Han
         redis (IDistributedCache, not the queue broker)           │    ├─▶ vault (KV + Transit)
                                                                    │    ├─▶ Claude API
                                                                    │    ├─▶ Gemini API
-                                                                   │    ├─▶ embeddings (nomic-v1.5)
+                                                                   │    ├─▶ tei-embed (nomic-v1.5)
+                                                                   │    ├─▶ tei-rerank (bge-reranker-v2-m3)
                                                                    │    └─▶ IMetaIntegration (mock|live)
 ```
 
-## Frozen decision map (DL-006 … DL-016)
+## Frozen decision map (DL-006 … DL-025)
 
 | DL | Decision | Reference file |
 |----|----------|----------------|
@@ -243,47 +244,56 @@ if (configuration.GetValue<bool>("Vault:Enabled", false))
 A disabled Vault (or other optional dep) must not cause `/health` to report
 `Unhealthy`. Apply the same if-block pattern to any future optional dependency.
 
-### Ollama — named-volume + one-shot init + conditional gate
+### TEI — two named-volume containers, health-gated startup (DL-024)
+
+Two HF Text Embeddings Inference containers replace the Ollama service and
+`ollama-init` one-shot. Each uses the same image with a different `--model-id`.
+Weights download on first start; a named volume persists the model cache so
+they are not re-downloaded on subsequent `docker compose up` runs.
 
 ```yaml
-embeddings:
-  image: ollama/ollama
-  profiles: ["embeddings"]
+tei-embed:
+  image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+  command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5"]
   volumes:
-    - ollamadata:/root/.ollama
+    - tei-embed-cache:/data
   healthcheck:
-    test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
-    interval: 5s
-    timeout: 3s
+    test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+    interval: 10s
+    timeout: 5s
     retries: 20
-    start_period: 10s
+    start_period: 120s   # generous; first run downloads model weights
 
-ollama-init:
-  image: ollama/ollama
-  profiles: ["embeddings"]
-  environment:
-    OLLAMA_HOST: http://embeddings:11434
-  command: pull nomic-embed-text:v1.5
-  depends_on:
-    embeddings:
-      condition: service_healthy
+tei-rerank:
+  image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+  command: ["--model-id", "BAAI/bge-reranker-v2-m3"]
   volumes:
-    - ollamadata:/root/.ollama
+    - tei-rerank-cache:/data
+  healthcheck:
+    test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 20
+    start_period: 120s
 ```
 
-Api and worker declare an **optional** dependency so they wait when the profile
-is active but skip the wait on the default host-Ollama path:
+Api and worker wait on both containers to be **healthy** before starting:
 
 ```yaml
 api:
   depends_on:
-    ollama-init:
-      condition: service_completed_successfully
-      required: false   # silently skipped when profile is not active
+    tei-embed:
+      condition: service_healthy
+    tei-rerank:
+      condition: service_healthy
 ```
 
-Default path (host-Ollama): `Embeddings__BaseUrl=http://host.docker.internal:11434`
-Reproducible path: `docker compose --profile embeddings up`
+Config endpoints are host:port only (no scheme — the app prepends `http://`):
+
+```
+Embeddings__Endpoint=tei-embed:80
+Reranker__Endpoint=tei-rerank:80
+```
 
 ### Frontend Dockerfile — public/ must exist
 
@@ -314,9 +324,11 @@ so the directory is always present.
   Store host:port only; the application owns the `http://` prefix.
 - **Vault health check always registered** → `/health` returns Unhealthy in the
   default dev setup where Vault is disabled. Gate the check on `Vault:Enabled`.
-- **Ollama model not pulled before app starts** → embedding requests fail at
-  startup. Use the `ollama-init` one-shot with `service_completed_successfully`
-  when running with the embeddings profile.
+- **TEI weights not cached before app starts** → embedding/rerank requests timeout
+  on first run. Gate `api` and `worker` on `tei-embed: service_healthy` and
+  `tei-rerank: service_healthy`; give each healthcheck a generous `start_period`
+  (≥ 120s) to cover first-run weight download; persist cache in named volumes so
+  subsequent starts are fast.
 
 ## Example: implementing the RLS isolation layer (Day 2)
 

@@ -25,9 +25,11 @@ paths:
 - All blob I/O goes through the interface. No direct MinIO SDK calls outside Infrastructure.
 - Keys are deterministic: `{brandId}/{assetId}` — this is what makes write retries idempotent.
 
-## Embeddings (nomic-embed-text-v1.5)
-- Prefix `search_document:` on corpus, `search_query:` on queries — silent retrieval rot if mixed up.
+## Embeddings (nomic-embed-text-v1.5, served via HF TEI — DL-024)
+- Prefix `search_document:` on corpus, `search_query:` on queries — silent retrieval rot if mixed up. TEI does NOT apply these prefixes; the provider must.
 - pgvector column dim MUST equal model output dim (768 default). Normalize vectors; cosine distance.
+- `Embeddings__Endpoint` and `Reranker__Endpoint` are **host:port only** (e.g. `tei-embed:80`). The app prepends `http://`; never store a scheme in config.
+- Gate `tei-embed` and `tei-rerank` health checks on whether the services are configured — absent config must not cause `/health` to report Unhealthy.
 
 ## External integrations
 - Wrap every external call with a timeout + bounded retry (Polly). Return a typed result or `ToolError`; never let a raw `HttpRequestException` propagate to a caller.

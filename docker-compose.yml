@@ -1,4 +1,4 @@
-# Eight-service topology (DL-015, DL-016). Demo target: `docker compose up`.
+# Nine-service topology (DL-015, DL-016, DL-024). Demo target: `docker compose up`.
 # Service set is FROZEN — do not add, remove, merge, or rename services.
 # Redis is IDistributedCache ONLY (not the queue broker); the queue/job store is
 # Hangfire on Postgres. Config values are supplied via .env (see .env.example);
@@ -26,11 +26,10 @@ services:
         condition: service_healthy
       vault:
         condition: service_started
-      # Optional: only waits when --profile embeddings is active; skipped on
-      # the default host-Ollama path (required: false).
-      ollama-init:
-        condition: service_completed_successfully
-        required: false
+      tei-embed:
+        condition: service_healthy
+      tei-rerank:
+        condition: service_healthy
 
   worker:
     build:
@@ -53,9 +52,10 @@ services:
         condition: service_healthy
       vault:
         condition: service_started
-      ollama-init:
-        condition: service_completed_successfully
-        required: false
+      tei-embed:
+        condition: service_healthy
+      tei-rerank:
+        condition: service_healthy
 
   frontend:
     build:
@@ -131,40 +131,42 @@ services:
     ports:
       - "8200:8200"
 
-  embeddings:
-    image: ollama/ollama
-    # Local model server for nomic-embed-text-v1.5 over HTTP (DL-016). Self-hosted,
-    # open-source. Opt-in via `docker compose --profile embeddings up`; default run
-    # uses host-installed Ollama at Embeddings__BaseUrl=http://host.docker.internal:11434.
-    profiles: ["embeddings"]
+  tei-embed:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    # Embedding server for nomic-embed-text-v1.5 (768-dim, cosine, normalized).
+    # DL-024: replaces Ollama. Listens on port 80; weights downloaded on first start.
+    # Named volume persists the model cache so weights are not re-downloaded each run.
+    # Generous start_period covers first-run weight download.
+    command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5"]
     ports:
-      - "11434:11434"
+      - "8090:80"
     volumes:
-      - ollamadata:/root/.ollama
+      - tei-embed-cache:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
       retries: 20
-      start_period: 10s
+      start_period: 120s
 
-  ollama-init:
-    image: ollama/ollama
-    # One-shot that pulls nomic-embed-text:v1.5 into the shared ollamadata volume.
-    # Runs only with the embeddings profile. api and worker declare an optional
-    # depends_on so they wait for the model to be ready when the profile is active,
-    # but skip the wait entirely on the default host-Ollama path.
-    profiles: ["embeddings"]
-    environment:
-      OLLAMA_HOST: http://embeddings:11434
-    command: pull nomic-embed-text:v1.5
-    depends_on:
-      embeddings:
-        condition: service_healthy
+  tei-rerank:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    # Cross-encoder reranker for BAAI/bge-reranker-v2-m3 (DL-025). Exposes /rerank.
+    # Named volume persists the model cache so weights are not re-downloaded each run.
+    command: ["--model-id", "BAAI/bge-reranker-v2-m3"]
+    ports:
+      - "8091:80"
     volumes:
-      - ollamadata:/root/.ollama
+      - tei-rerank-cache:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
 
 volumes:
   pgdata:
   miniodata:
-  ollamadata:
+  tei-embed-cache:
+  tei-rerank-cache:

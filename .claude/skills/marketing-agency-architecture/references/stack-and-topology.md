@@ -24,7 +24,7 @@ Docker Compose. Immutable input.
 impact. Do not invent a different version; default to .NET 10, switch only on the
 architect's instruction.
 
-## The eight services (one `docker-compose.yml`)
+## The nine services (one `docker-compose.yml`)
 
 | Service | Stack | Responsibility |
 |---------|-------|----------------|
@@ -35,7 +35,8 @@ architect's instruction.
 | `redis` | `redis` | `IDistributedCache` (caching only). **Not the queue broker.** |
 | `minio` | `minio/minio` | Object storage for generated media, brand-prefixed |
 | `vault` | `hashicorp/vault` (dev mode) | KV: app secrets. Transit: per-brand token encryption |
-| `embeddings` | local model server (Ollama) | Serves `nomic-embed-text-v1.5` over HTTP for ingest + retrieval; self-hosted, open-source |
+| `tei-embed` | `ghcr.io/huggingface/text-embeddings-inference:cpu-1.6` | Serves `nomic-ai/nomic-embed-text-v1.5` (768-dim) via `/embed`; health-gated (DL-024) |
+| `tei-rerank` | `ghcr.io/huggingface/text-embeddings-inference:cpu-1.6` | Cross-encoder reranker `BAAI/bge-reranker-v2-m3` via `/rerank` (DL-025) |
 
 A compose skeleton (service names, images, dependency order) is in
 `assets/docker-compose.skeleton.yml`. The demo target is `docker compose up`; no
@@ -58,7 +59,8 @@ Kubernetes, MinIO → S3, dev Vault → hardened Vault).
                         │      │    embeddings)       ├──▶ vault       │
                         │  redis (IDistributedCache)  ├──▶ Claude API  │
                         │                             ├──▶ Gemini API  │
-                        │                             ├──▶ embeddings (nomic-v1.5) │
+                        │                             ├──▶ tei-embed (nomic-v1.5) │
+                        │                             ├──▶ tei-rerank (bge-reranker-v2-m3) │
                         │                             └──▶ MetaIntegration (mock|live) │
                         └─────────────────────────────────────────────┘
 ```

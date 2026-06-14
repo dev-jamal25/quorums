@@ -1,6 +1,6 @@
 # docker-compose.skeleton.yml
 #
-# Eight-service skeleton derived from the FROZEN architecture (DL-015, DL-016).
+# Nine-service skeleton derived from the FROZEN architecture (DL-015, DL-016, DL-024).
 # Service names, images, and dependency order are fixed by the architecture; ports,
 # volumes, env wiring, and healthchecks are filled in during Day 1. Do NOT add,
 # remove, merge, or rename services. Redis is IDistributedCache ONLY — it is NOT the
@@ -12,7 +12,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     # ASP.NET Core Web API. HTTP surface: brands, knowledge CMS, runs, approvals, assets.
-    depends_on: [postgres, redis, minio, vault, embeddings]
+    depends_on: [postgres, redis, minio, vault, tei-embed, tei-rerank]
     # ports: ["8080:8080"]
     # environment / env_file: Vault address, Postgres conn, MinIO creds, Redis URL...
 
@@ -22,7 +22,7 @@ services:
       dockerfile: Dockerfile
     # .NET Worker Service hosting the Hangfire server. Executes ExecuteRun/ResumeRun.
     # Built from the SAME publish output as api (zero version skew).
-    depends_on: [postgres, redis, minio, vault, embeddings]
+    depends_on: [postgres, redis, minio, vault, tei-embed, tei-rerank]
 
   frontend:
     build:
@@ -55,14 +55,21 @@ services:
     # (transit/keys/brand-tokens). Hardening path documented; dev mode stated openly.
     # cap_add: [IPC_LOCK]
 
-  embeddings:
-    image: ollama/ollama
-    # Local model server for nomic-embed-text-v1.5 over HTTP (DL-016). Self-hosted,
-    # open-source. Must be healthy before ingest/retrieval. (HF Text-Embeddings-
-    # Inference is the documented alternative if a reranker is later co-hosted.)
-    # volumes: [ollamadata:/root/.ollama]
+  tei-embed:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    # Embedding server: nomic-ai/nomic-embed-text-v1.5, 768-dim, cosine (DL-024).
+    # Named volume caches weights. Healthcheck must use generous start_period (>=120s).
+    command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5"]
+    # volumes: [tei-embed-cache:/data]
+
+  tei-rerank:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    # Cross-encoder reranker: BAAI/bge-reranker-v2-m3, /rerank endpoint (DL-025).
+    command: ["--model-id", "BAAI/bge-reranker-v2-m3"]
+    # volumes: [tei-rerank-cache:/data]
 
 # volumes:
 #   pgdata:
 #   miniodata:
-#   ollamadata:
+#   tei-embed-cache:
+#   tei-rerank-cache:

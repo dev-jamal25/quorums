@@ -18,7 +18,7 @@ Claude-supervised multi-agent system that turns one DTC brand's brief into on-br
 - **Supervisor is the sole writer of `RunState.Phase`, `Draft`, `Budget`.** Agents write their declared slice only; handoffs are typed records, never free-form text (DL-020).
 - **Secrets via Vault** (`ISecretsProvider`): KV→Options for app config; per-brand Meta tokens are Transit-encrypted ciphertext in the RLS-scoped `BrandMetaConnection`. Never inline a secret; never log a token or write a decrypt to disk (DL-011).
 - **Side effects are idempotent:** MinIO keyed by `assetId`, publish keyed by `contentItemId` — a retried Hangfire segment must not duplicate (DL-022).
-- **Embeddings = self-hosted nomic-embed-text-v1.5.** Prefix `search_document:` on corpus, `search_query:` on queries; pgvector column dim MUST equal model output dim (768 default); cosine distance, normalized vectors (DL-016).
+- **Embeddings = self-hosted nomic-embed-text-v1.5.** Prefix `search_document:` on corpus, `search_query:` on queries; pgvector column dim MUST equal model output dim (768 default); cosine distance, normalized vectors (DL-016). Served via HF TEI, two containers (DL-024); cross-encoder rerank + sparse Postgres FTS hybrid retrieval (DL-025).
 - **Stack is .NET by employer mandate.** Bootcamp Python standards transfer as *principles*; idioms are .NET (DL-015).
 
 ## Tech Stack (The What)
@@ -26,7 +26,7 @@ Claude-supervised multi-agent system that turns one DTC brand's brief into on-br
 - **Backend:** one `Backend.sln` — `Api` (ASP.NET Core, .NET 10 LTS), `Worker` (Worker Service + Hangfire), `Core` (domain + interfaces), `Infrastructure` (EF Core/Npgsql, Vault, MinIO, integrations, retrieval). `Api` and `Worker` ship from one publish output.
 - **Frontend:** Next.js (React, TypeScript) in `frontend/`. No business logic; talks to the API via a typed `lib/api-client.ts`.
 - **Data:** Postgres + pgvector — RLS isolation, embeddings, run checkpoints, **Hangfire job store** (own schema). EF Core Migrations own RLS SQL via `migrationBuilder.Sql`.
-- **Infra:** Redis (`IDistributedCache`, not a queue broker), MinIO (`IStorageService`), Vault dev-mode (VaultSharp), Ollama embedding server. 8 services, one `docker-compose.yml`.
+- **Infra:** Redis (`IDistributedCache`, not a queue broker), MinIO (`IStorageService`), Vault dev-mode (VaultSharp), HF TEI (2 containers: nomic-embed + bge-reranker-v2-m3). 9 services, one `docker-compose.yml`.
 - **AI:** Claude (Anthropic API + .NET MCP SDK), Microsoft Agent Framework 1.0 (intra-segment graph only — the state machine owns the durable wait), Gemini (HttpClient behind interface). Langfuse tracing.
 - **Validation:** DTOs + FluentValidation; `[ApiController]` auto-400 ProblemDetails. Errors surface as status codes, never `200` with an error body.
 
@@ -39,7 +39,7 @@ dotnet format --verify-no-changes            # style gate
 dotnet test                                  # full xUnit suite (unit + Testcontainers integration)
 dotnet test --filter Category=Isolation      # two-brand RLS leakage test
 dotnet ef migrations add <Name> -p Infrastructure -s Api   # NEVER hand-edit an applied migration
-docker compose up --build                    # full 8-service demo target
+docker compose up --build                    # full 9-service demo target
 
 # frontend (cd frontend/)
 npm run build        # must pass before done
@@ -73,7 +73,7 @@ Six defects fixed during onboarding; document them here so a fresh clone never r
 
 **Vault compose service** — add `command: server -dev` and `SKIP_SETCAP: "true"` to suppress the CAP\_SETFCAP error on Docker Desktop / WSL2. `cap_add: [IPC_LOCK]` stays.
 
-**Ollama init pattern** — pull the model via a one-shot `ollama-init` service (`profiles: ["embeddings"]`, `command: pull nomic-embed-text:v1.5`, `depends_on: embeddings: condition: service_healthy`). `api` and `worker` declare `ollama-init: condition: service_completed_successfully` with `required: false` so the wait is active only when the profile is on.
+**TEI two-container pattern (DL-024)** — `tei-embed` (`nomic-ai/nomic-embed-text-v1.5`) and `tei-rerank` (`BAAI/bge-reranker-v2-m3`) both use `ghcr.io/huggingface/text-embeddings-inference:cpu-1.6`. Each has a named-volume model cache (`tei-embed-cache`, `tei-rerank-cache`) so weights are downloaded once. `api` and `worker` declare `condition: service_healthy` on both services — give each healthcheck `start_period: 120s` to cover first-run weight download. Ollama and `ollama-init` are removed entirely.
 
 **Dockerfile ENTRYPOINT split** — `ENTRYPOINT ["dotnet"]` + `CMD ["Backend.Api.dll"]`. The worker compose service uses `command: ["Backend.Worker.dll"]`, which overrides only `CMD`. If `ENTRYPOINT` carries the assembly name, compose `command` appends instead of replacing and the worker silently runs the API binary — jobs stay Queued forever.
 
