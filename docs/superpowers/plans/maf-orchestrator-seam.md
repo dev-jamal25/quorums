@@ -521,23 +521,24 @@ public sealed class MafResumeSeamTests : IClassFixture<DurabilityFixture>
 
 > A reviewer should be able to read this section alone and know exactly what changed and that the seam held.
 
-**Slice: MAF supervised graph (deterministic stubs) — real graph behind the unchanged durable seam (DATE, commit `____`)**
+**Slice: MAF supervised graph (deterministic stubs) — real graph behind the unchanged durable seam (2026-06-14, branch `feat/maf-orchestrator-seam`, commits `aca8d0d`…`73747d8` + this summary)**
 
-- **MAF seam path taken:** DL-015/DL-018 fallback **chosen (not forced)** — durable wait owned by the `AgentRun` state machine to reuse the proven c1/c2 seam; MAF 1.0's native checkpointing/HITL was deliberately **not** used here. MAF runs only intra-segment, returns a `RunState`, holds nothing across the gate. (Confirm: the generation workflow terminates at `assembly`; `ExecuteRunJob` still does the checkpoint/exit; `ResumeRunJob` rehydrates and runs the publish workflow.)
-- **Fork topology shipped:** real fan-out/fan-in (Copywriting ∥ Media → join at assembly) — OR sequential fallback if the Task 1 spike found fan-in unviable (state which, and why).
-- **MAF package pinned:** `Microsoft.Agents.AI __._._` (latest stable 1.x; Workflows namespace) — CPM.
-- **Nodes:** Supervisor entry, Content Strategist, Creative Director, Copywriting, Media Generation, Assembly (Supervisor join), Publishing — all deterministic stubs; Ads Optimization + Analytics present as off-path designed-for stubs (DL-019).
-- **What was replaced:** `StubOrchestrator` deleted; `MafOrchestrator : IOrchestrator` registered in its place (identical ctor). `IOrchestrator`, `RunState`, contracts, both Hangfire jobs, `RunCheckpoint`, `RunStateJsonOptions` **unchanged** — the proof that the seam survives.
-- **Trace parity:** 5 spans preserved — `strategy, creative, copywriting, media:minio.put, publishing:meta.publish`; one continuous trace id across the ExecuteRun→ResumeRun seam.
-- **Files created:** _list `Maf/` + test files._  **Files modified:** _DI ext, fixture, csproj, props._  **Files deleted:** `StubOrchestrator.cs`.
-- **Gate evidence (paste actual output):**
-  - `dotnet build -warnaserror` → ____
-  - `dotnet format --verify-no-changes` → ____
-  - `dotnet test` → ____ passed / 0 failed
-  - `Category=Durability` (incl. `MafResumeSeamTests`) → ____
-  - `Category=Isolation` → ____
-  - `Category=Trace` → ____
-- **Adversarial proof result:** ExecuteRun ×2 (kill+retry) → 1 checkpoint, 1 asset, `AwaitingApproval`; approve; ResumeRun ×2 (kill+retry) → `Done`, same deterministic `mock://meta/…` ref, no second publish, `Spans.Count == SpanIds.Count`.
+- **MAF seam path taken:** DL-015/DL-018 fallback **chosen (not forced)** — the durable wait stays in the `AgentRun` state machine to reuse the proven c1/c2 seam. MAF 1.0 *does* ship native checkpointing/HITL; we deliberately did **not** use them. MAF runs only intra-segment, returns a `RunState`, and holds nothing across the gate. Confirmed: the generation workflow terminates at the `assembly` node and returns; `ExecuteRunJob` does the checkpoint/exit unchanged; `ResumeRunJob` rehydrates and runs the single-node publish workflow.
+- **Fork topology shipped:** **real fan-out/fan-in** — `AddFanOutEdge(creative → [copywriting, media])` + `AddFanInBarrierEdge([copywriting, media] → assembly)`, where `assembly` is an `AggregatingExecutor<RunState,RunState>` folding the two branches via `AssemblyMerge` (disjoint-slice union, order-independent). The Task 1 spike confirmed the barrier + aggregator yields exactly one merged output, so the banked sequential fallback was **not** needed.
+- **MAF package pinned:** `Microsoft.Agents.AI.Workflows` **1.10.0** — its own package (the 1.x GA line; brings `Microsoft.Agents.AI.Abstractions` 1.10.0). Pinned under CPM in `Directory.Packages.props`. Nodes derive from `Executor<RunState,RunState>`; no source generator needed.
+- **Nodes:** SupervisorEntry, ContentStrategist, CreativeDirector, Copywriting, MediaGeneration, Assembly (`AggregatingExecutor` / supervisor join), Publishing — all deterministic stubs; AdsOptimization + Analytics bound as off-path orphan stubs (`Build(validateOrphans: false)`), present but never exercised (DL-019).
+- **What was replaced:** `StubOrchestrator` deleted (−191 lines); `MafOrchestrator : IOrchestrator` registered in its place with the identical 3-arg ctor. `IOrchestrator`, `RunState` + contracts, both Hangfire jobs, `RunCheckpoint`, `RunStateJsonOptions`, the approval controller, RLS — **unchanged**. The existing seam tests passing through the new graph is the proof the seam survives.
+- **Trace parity:** the 5 spans are preserved — `strategy, creative, copywriting, media:minio.put, publishing:meta.publish` — under one continuous trace id across the ExecuteRun→ResumeRun seam (SupervisorEntry/Assembly record no span). The fan-in merge de-dupes the shared pre-fork spans by id.
+- **Files (24 changed, +1551 / −199):** *created* — `Orchestration/Maf/{MafOrchestrator,MafWorkflowRunner,GenerationWorkflowFactory,PublishWorkflowFactory,AssemblyMerge}.cs`, `Maf/Nodes/{SupervisorEntry,ContentStrategist,CreativeDirector,Copywriting,MediaGeneration,Publishing,AdsOptimization,Analytics}Executor.cs`, tests `MafNodeTests.cs`, `MafOrchestratorIdempotencyTests.cs`, `MafResumeSeamTests.cs`, `Support/RecordingMetaIntegration.cs`. *Modified* — `Directory.Packages.props`, `Infrastructure.csproj`, `OrchestrationServiceCollectionExtensions.cs`, `DurabilityFixture.cs`, `StorageTests.cs`. *Deleted* — `StubOrchestrator.cs`.
+- **Gate evidence:**
+  - `dotnet build Backend.sln -warnaserror` → **Build succeeded**, 0 warnings.
+  - `dotnet format Backend.sln --verify-no-changes` → **clean**.
+  - `dotnet test Backend.sln` → **50 passed / 0 failed** (UnitTests 17, IntegrationTests 33).
+  - `Category=Durability` (incl. `MafResumeSeamTests`, `MafOrchestratorIdempotencyTests`, `MafNodeTests`) → green.
+  - `Category=Isolation` → **10 passed**, zero cross-brand leakage.
+  - `Category=Trace` / `Category=Publish` / `Category=Storage` → green through the MAF graph.
+  - `gitleaks` → pre-commit hook **Passed** on every commit (standalone CLI not installed in this environment).
+- **Adversarial proof result (`MafResumeSeamTests`):** ExecuteRun ×2 (kill + Hangfire retry) → 1 checkpoint, 1 asset, `AwaitingApproval`; approve; ResumeRun ×2 (kill + retry) → `Done`, deterministic `mock://meta/…` ref, no second publish, `Spans.Count == SpanIds.Count`, one trace id across the seam.
 
 ## Out of scope (later slices, do not build here)
 
