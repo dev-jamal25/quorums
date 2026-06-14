@@ -7,7 +7,8 @@ namespace Backend.IntegrationTests.Knowledge;
 /// an ungrounded, empty result with no error and no exception.
 /// </summary>
 [Trait("Category", "Isolation")]
-public sealed class EmptyRetrievalTests : IClassFixture<KnowledgeFixture>
+[Collection("Knowledge")]
+public sealed class EmptyRetrievalTests
 {
     private readonly KnowledgeFixture _fixture;
 

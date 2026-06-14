@@ -12,7 +12,8 @@ namespace Backend.IntegrationTests.Knowledge;
 /// nearest); the live test proves the same ranking against a real tei-embed and is opt-in.
 /// </summary>
 [Trait("Category", "Isolation")]
-public sealed class DenseRelevanceTests : IClassFixture<KnowledgeFixture>
+[Collection("Knowledge")]
+public sealed class DenseRelevanceTests
 {
     private readonly KnowledgeFixture _fixture;
 

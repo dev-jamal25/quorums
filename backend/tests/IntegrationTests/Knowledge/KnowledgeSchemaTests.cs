@@ -9,7 +9,8 @@ namespace Backend.IntegrationTests.Knowledge;
 /// indexes, and is still RLS-covered (already policied in InitialCreate).
 /// </summary>
 [Trait("Category", "Isolation")]
-public sealed class KnowledgeSchemaTests : IClassFixture<KnowledgeFixture>
+[Collection("Knowledge")]
+public sealed class KnowledgeSchemaTests
 {
     private readonly KnowledgeFixture _fixture;
 

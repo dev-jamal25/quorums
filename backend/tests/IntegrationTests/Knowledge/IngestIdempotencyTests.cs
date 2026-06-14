@@ -9,7 +9,8 @@ namespace Backend.IntegrationTests.Knowledge;
 /// duplicates, a doc edited shorter drops its orphan chunks, and purge removes them all.
 /// </summary>
 [Trait("Category", "Isolation")]
-public sealed class IngestIdempotencyTests : IClassFixture<KnowledgeFixture>
+[Collection("Knowledge")]
+public sealed class IngestIdempotencyTests
 {
     private readonly KnowledgeFixture _fixture;
 

@@ -11,7 +11,8 @@ namespace Backend.IntegrationTests.Knowledge;
 /// so the result can never pass vacuously.
 /// </summary>
 [Trait("Category", "Isolation")]
-public sealed class RagIsolationTests : IClassFixture<KnowledgeFixture>
+[Collection("Knowledge")]
+public sealed class RagIsolationTests
 {
     private const string SharedQuery = "brand voice and roast style";
 
