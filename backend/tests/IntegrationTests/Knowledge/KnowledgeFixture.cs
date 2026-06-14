@@ -1,8 +1,10 @@
+using Backend.Core.Common;
 using Backend.Core.Domain;
 using Backend.Core.Knowledge;
 using Backend.Core.Multitenancy;
 using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Knowledge;
+using Backend.Infrastructure.Knowledge.Seed;
 using Backend.Infrastructure.Multitenancy;
 using Backend.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -50,6 +52,14 @@ public sealed class KnowledgeFixture : IAsyncLifetime
 
     public Guid BrandWithNoCorpus { get; } = Guid.NewGuid();
 
+    /// <summary>Query built from Brand A's distinctive Yirgacheffe product vocabulary.</summary>
+    public string BrandAProductQuery { get; } = CoffeeRoasterCorpus.RelevanceQuery;
+
+    /// <summary>The expected nearest chunk for <see cref="BrandAProductQuery"/> under Brand A —
+    /// the whole-unit Yirgacheffe product's chunk 0 (id = DeterministicGuid(docId, "0")).</summary>
+    public Guid BrandAProductChunkId =>
+        DeterministicGuid.From(DeterministicGuid.From(BrandA, CoffeeRoasterCorpus.RelevanceProductTitle), "0");
+
     public async Task InitializeAsync()
     {
         await _container.StartAsync();
@@ -59,6 +69,10 @@ public sealed class KnowledgeFixture : IAsyncLifetime
         await CreateLeastPrivilegeRoleAsync();
         AppUserConnectionString = BuildAppUserConnectionString();
         await SeedBrandsAsync();
+
+        // Both brands get the identical corpus, so the leakage proof is separated by RLS alone.
+        await SeedCorpusAsync(BrandA);
+        await SeedCorpusAsync(BrandB);
     }
 
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
@@ -145,5 +159,16 @@ public sealed class KnowledgeFixture : IAsyncLifetime
             new Brand { Id = BrandWithNoCorpus, Name = "Empty Roaster", CreatedAt = now });
 
         await seed.SaveChangesAsync();
+    }
+
+    private async Task SeedCorpusAsync(Guid brandId)
+    {
+        // Runs the production seeder on the RLS-subject role with the deterministic embedder.
+        await using var db = CreateDbContext(AppUserConnectionString);
+        var brandContext = new BrandContext();
+        var scope = new BrandScope(db, brandContext);
+        var ingest = new KnowledgeIngestService(db, new TypeDispatchedChunker(), _embeddings);
+        var seeder = new KnowledgeSeeder(db, scope, brandContext, ingest);
+        await seeder.SeedAsync(brandId);
     }
 }

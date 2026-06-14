@@ -1,4 +1,5 @@
 using Backend.Core.Knowledge;
+using Backend.Infrastructure.Knowledge.Seed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,6 +20,7 @@ public static class KnowledgeServiceCollectionExtensions
         services.AddSingleton<IKnowledgeChunker, TypeDispatchedChunker>();
         services.AddScoped<IKnowledgeIngestService, KnowledgeIngestService>();
         services.AddScoped<IRetrievalService, PgVectorRetrieval>();
+        services.AddScoped<KnowledgeSeeder>();
 
         var mode = (configuration["Embeddings:Mode"] ?? "nomic").Trim().ToLowerInvariant();
         if (mode == "mock")
