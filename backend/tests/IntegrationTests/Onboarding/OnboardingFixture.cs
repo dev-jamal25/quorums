@@ -5,6 +5,7 @@ using Backend.Infrastructure.Onboarding;
 using Backend.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Pgvector.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -71,7 +72,7 @@ public sealed class OnboardingFixture : IAsyncLifetime
     private static AppDbContext CreateDbContext(string connectionString)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(connectionString)
+            .UseNpgsql(connectionString, o => o.UseVector())
             .Options;
 
         return new AppDbContext(options);

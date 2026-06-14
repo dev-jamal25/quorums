@@ -4,6 +4,7 @@ using Backend.Infrastructure.Multitenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Pgvector.EntityFrameworkCore;
 
 namespace Backend.Infrastructure.Persistence;
 
@@ -26,7 +27,7 @@ public static class DataAccessServiceCollectionExtensions
                 .Value
                 .Postgres;
 
-            options.UseNpgsql(connectionString);
+            options.UseNpgsql(connectionString, o => o.UseVector());
         });
 
         services.AddScoped<IBrandContext, BrandContext>();

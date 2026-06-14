@@ -7,4 +7,10 @@
     <AssemblyName>Backend.Core</AssemblyName>
   </PropertyGroup>
 
+  <!-- Pgvector base type only: the KnowledgeChunk.Embedding property is a Vector.
+       The EF mapping (Pgvector.EntityFrameworkCore) stays in Infrastructure. -->
+  <ItemGroup>
+    <PackageReference Include="Pgvector" />
+  </ItemGroup>
+
 </Project>

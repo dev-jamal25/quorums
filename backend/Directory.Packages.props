@@ -28,7 +28,8 @@
     <!-- Pinned directly to override the vulnerable 8.0.0 brought in transitively
          by AspNetCore.HealthChecks.NpgSql (NU1903 / GHSA-x9vc-6hfv-hg8c). -->
     <PackageVersion Include="Npgsql" Version="9.0.2" />
-    <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.2.0" />
+    <PackageVersion Include="Pgvector" Version="0.3.2" />
+    <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.0" />

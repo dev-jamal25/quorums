@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Pgvector.EntityFrameworkCore;
 
 namespace Backend.Infrastructure.Persistence;
 
@@ -14,7 +15,9 @@ public sealed class AppDbContextDesignTimeFactory : IDesignTimeDbContextFactory<
     public AppDbContext CreateDbContext(string[] args)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql("Host=localhost;Port=5432;Database=design_time;Username=design;Password=design")
+            .UseNpgsql(
+                "Host=localhost;Port=5432;Database=design_time;Username=design;Password=design",
+                o => o.UseVector())
             .Options;
 
         return new AppDbContext(options);

@@ -5,6 +5,7 @@
 using Backend.Infrastructure.Configuration;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
+using Backend.Infrastructure.Knowledge;
 using Backend.Infrastructure.Orchestration;
 using Backend.Infrastructure.Persistence;
 using Backend.Infrastructure.Storage;
@@ -16,6 +17,7 @@ await builder.Configuration.AddVaultKvSecretsAsync();
 
 builder.Services.AddValidatedAppOptions(builder.Configuration);
 builder.Services.AddDataAccess();
+builder.Services.AddKnowledge(builder.Configuration);
 builder.Services.AddHangfireJobStore(builder.Configuration);
 builder.Services.AddHangfireWorker();
 builder.Services.AddStorage();
