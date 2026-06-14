@@ -1,5 +1,7 @@
 using Backend.Core.Orchestration;
+using Backend.Core.Orchestration.Contracts;
 using Backend.Core.Storage;
+using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Orchestration.Maf;
 using Backend.Infrastructure.Orchestration.Maf.Nodes;
 using Backend.Infrastructure.Tracing;
@@ -173,5 +175,50 @@ public sealed class MafNodeTests
         Assert.Equal(copyFirst.Media, mediaFirst.Media);
         Assert.Equal(copyFirst.Draft!.Status, mediaFirst.Draft!.Status);
         Assert.Equal(copyFirst.Trace.Spans.Count, mediaFirst.Trace.Spans.Count);
+    }
+
+    [Fact]
+    public async Task Publishing_publishes_via_mock_and_reaches_done()
+    {
+        var runId = Guid.NewGuid();
+        var brandId = Guid.NewGuid();
+        var node = new PublishingExecutor(new MockMetaIntegration(), new LocalTraceRecorder());
+        var state = Base(runId, brandId) with { Caption = new Caption("stub-hook", "stub-body", ["#stub"]) };
+
+        var result = await node.RunAsync(state);
+
+        Assert.Equal(GraphPhase.Done, result.Phase);
+        Assert.NotNull(result.Publish);
+        Assert.StartsWith("mock://meta/", result.Publish!.ExternalRef!);
+        Assert.Equal("published", result.Publish.Status);
+        Assert.Empty(result.Errors);
+        Assert.Contains(result.Trace.Spans, s => s.Node == "publishing" && s.Tool == "meta.publish" && s.Status == "ok");
+    }
+
+    [Fact]
+    public async Task Publishing_external_ref_is_deterministic_across_retries()
+    {
+        var runId = Guid.NewGuid();
+        var brandId = Guid.NewGuid();
+        var node = new PublishingExecutor(new MockMetaIntegration(), new LocalTraceRecorder());
+        var state = Base(runId, brandId) with { Caption = new Caption("h", "b", ["#x"]) };
+
+        var first = await node.RunAsync(state);
+        var second = await node.RunAsync(state);
+
+        // Keyed by run id, so a retried publish re-uses the same external reference (DL-022).
+        Assert.Equal(first.Publish!.ExternalRef, second.Publish!.ExternalRef);
+    }
+
+    [Fact]
+    public async Task Stub_nodes_return_not_implemented_marker_and_do_not_throw()
+    {
+        var ads = await new AdsOptimizationExecutor()
+            .HandleAsync(Base(Guid.NewGuid(), Guid.NewGuid()), context: null!, CancellationToken.None);
+        Assert.Contains(ads.Errors, e => e.Code == "ads.not_implemented" && !e.Retryable);
+
+        var analytics = await new AnalyticsExecutor()
+            .HandleAsync(Base(Guid.NewGuid(), Guid.NewGuid()), context: null!, CancellationToken.None);
+        Assert.Contains(analytics.Errors, e => e.Code == "analytics.not_implemented" && !e.Retryable);
     }
 }
