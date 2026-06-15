@@ -30,5 +30,9 @@ paths:
 - Prefix `search_document:` on corpus, `search_query:` on queries — silent retrieval rot if mixed up.
 - pgvector column dim MUST equal model output dim (768 default). Normalize vectors; cosine distance.
 
+## Claude / LLM calls (`Microsoft.Extensions.AI` `IChatClient`)
+- Every Claude call goes through `Microsoft.Extensions.AI`'s `IChatClient` (already a transitive dep of `Microsoft.Agents.AI.Workflows`). The Anthropic client (`Anthropic.SDK` — the community package; there is no official .NET SDK) is registered as an `IChatClient` **once, here in Infrastructure**: today `AddSingleton<IChatClient>(sp => new AnthropicClient(apiKey).Messages)` (`AnthropicClient.Messages` *is* an `IChatClient`); key from `AnthropicOptions`, model id config-bound per call (`ChatOptions.ModelId`).
+- The `Anthropic.SDK` type **never leaves Infrastructure**; consumers inject `IChatClient` only (see `orchestration.md`). NEVER add a second Claude-call path (no bespoke `HttpClient`, no direct SDK calls from feature/agent/Worker code).
+
 ## External integrations
 - Wrap every external call with a timeout + bounded retry (Polly). Return a typed result or `ToolError`; never let a raw `HttpRequestException` propagate to a caller.
