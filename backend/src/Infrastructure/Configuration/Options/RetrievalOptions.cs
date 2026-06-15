@@ -28,4 +28,31 @@ public sealed class RetrievalOptions
 
     /// <summary>S2 final cut (k).</summary>
     public int FinalK { get; init; } = 5;
+
+    /// <summary>S2 metadata blend weights (DL-025). Defaults: α=1 relevance; β/δ boost; γ inert
+    /// (no target segment until agent wiring). With β=γ=δ=0 the blend collapses to pure rerank order.</summary>
+    public RetrievalBlendOptions Blend { get; init; } = new();
+}
+
+/// <summary>
+/// The S2 metadata-blend weights (DL-025, JC-2). The reranker stays pure; these weights are the
+/// only place metadata (performance / recency / segment) touches the final score. Config-bound,
+/// never literals. With β=γ=δ=0 the blend collapses to the pure reranker order.
+/// </summary>
+public sealed record RetrievalBlendOptions
+{
+    /// <summary>α — relevance weight (baseline = 1).</summary>
+    public double Alpha { get; init; } = 1.0;
+
+    /// <summary>β — historical_post normalized performance ((engagement_rate + ctr) / 2).</summary>
+    public double Beta { get; init; } = 0.3;
+
+    /// <summary>γ — historical_post audience-segment match. Inert in slice 3 (no target segment yet).</summary>
+    public double Gamma { get; init; }
+
+    /// <summary>δ — market_intel recency decay.</summary>
+    public double Delta { get; init; } = 0.3;
+
+    /// <summary>Half-life (days) for the market_intel recency decay 2^(-ageDays / halfLife).</summary>
+    public double RecencyHalfLifeDays { get; init; } = 30.0;
 }

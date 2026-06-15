@@ -25,6 +25,8 @@ public static class OptionsServiceCollectionExtensions
         services.AddValidatedOptions<RedisOptions>(configuration, RedisOptions.SectionName);
         services.AddValidatedOptions<EmbeddingsOptions>(configuration, EmbeddingsOptions.SectionName);
         services.AddValidatedOptions<RetrievalOptions>(configuration, RetrievalOptions.SectionName);
+        services.AddValidatedOptions<RerankerOptions>(configuration, RerankerOptions.SectionName);
+        services.AddValidatedOptions<QueryTransformOptions>(configuration, QueryTransformOptions.SectionName);
         services.AddValidatedOptions<HangfireOptions>(configuration, HangfireOptions.SectionName);
         services.AddValidatedOptions<MetaOptions>(configuration, MetaOptions.SectionName);
         // Langfuse keys are optional (empty = no-op local tracing); no [Required], so

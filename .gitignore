@@ -32,3 +32,9 @@ yarn-error.log*
 .vscode/
 .DS_Store
 Thumbs.db
+
+# --- local model weights + local compose override (never committed) ---
+# bge-reranker-v2-m3 / nomic weights downloaded for offline TEI; the committed
+# docker-compose.yml keeps --model-id on the Hub repo so CI still pulls.
+tei-models/
+docker-compose.override.yml

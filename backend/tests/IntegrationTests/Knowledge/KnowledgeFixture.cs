@@ -60,6 +60,14 @@ public sealed class KnowledgeFixture : IAsyncLifetime
     public Guid BrandAProductChunkId =>
         DeterministicGuid.From(DeterministicGuid.From(BrandA, CoffeeRoasterCorpus.RelevanceProductTitle), "0");
 
+    /// <summary>Brand A's higher-engagement historical_post chunk 0 — the perf-blend boost target.</summary>
+    public Guid PourOverSundayChunkId =>
+        DeterministicGuid.From(DeterministicGuid.From(BrandA, "Post - Pour Over Sunday"), "0");
+
+    /// <summary>Brand A's fresh (2026) market_intel chunk 0 — the recency-blend target.</summary>
+    public Guid MarketIntelFreshChunkId =>
+        DeterministicGuid.From(DeterministicGuid.From(BrandA, "Intel - Specialty Trend 2026"), "0");
+
     public async Task InitializeAsync()
     {
         await _container.StartAsync();
@@ -100,13 +108,22 @@ public sealed class KnowledgeFixture : IAsyncLifetime
     /// <summary>A dense retrieval service on the RLS-subject role bound to <paramref name="brandId"/>,
     /// sharing the same deterministic embedder as ingest (so a seeded doc and a query of the
     /// same vocabulary are nearest neighbours). Default RetrievalOptions = dense-only.</summary>
-    public (AppDbContext Db, IBrandScope Scope, IRetrievalService Retrieval) CreateRetrieval(Guid brandId)
+    public (AppDbContext Db, IBrandScope Scope, IRetrievalService Retrieval) CreateRetrieval(
+        Guid brandId,
+        RetrievalOptions? options = null,
+        IRerankProvider? rerank = null,
+        IQueryTransformer? transform = null)
     {
         var db = CreateDbContext(AppUserConnectionString);
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var retrieval = new PgVectorRetrieval(db, _embeddings, Options.Create(new RetrievalOptions()));
+        var retrieval = new PgVectorRetrieval(
+            db,
+            _embeddings,
+            rerank ?? new DeterministicRerankProvider(),
+            transform ?? new DeterministicQueryTransformer(),
+            Options.Create(options ?? new RetrievalOptions()));
         return (db, scope, retrieval);
     }
 

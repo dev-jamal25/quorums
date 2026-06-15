@@ -19,6 +19,10 @@
     <PackageReference Include="Hangfire.AspNetCore" />
     <PackageReference Include="Hangfire.PostgreSql" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" />
+    <!-- S0 query-transform (Task 6): Claude via Microsoft.Extensions.AI IChatClient (item 6).
+         Referenced now so the restore fetches them; the ChatQueryTransformer code lands with Task 6. -->
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Anthropic.SDK" />
     <!-- Design-time only: the IDesignTimeDbContextFactory + migrations tooling.
          PrivateAssets=all keeps it out of Api/Worker publish output. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
@@ -28,9 +32,11 @@
     <ProjectReference Include="..\Core\Core.csproj" />
   </ItemGroup>
 
-  <!-- The isolation test drives the real internal BrandScope binding path. -->
+  <!-- The isolation test drives the real internal BrandScope binding path; the unit tests
+       drive the internal MetadataBlend pure function (S2 blend math). -->
   <ItemGroup>
     <InternalsVisibleTo Include="Backend.IntegrationTests" />
+    <InternalsVisibleTo Include="Backend.UnitTests" />
   </ItemGroup>
 
 </Project>
