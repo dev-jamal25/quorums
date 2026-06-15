@@ -113,14 +113,14 @@ others          : α·relNorm        (α = 1)
 
 ## Confirmed contracts (Task 1 spike — run 2026-06-15)
 
-> **Status:** the two load-bearing keystones (FTS/RLS, migration-free) are **CONFIRMED live** against the real `pgvector/pgvector:pg16` container. The two network-dependent items (tei-rerank `/rerank`, `IChatClient` package) are **DOCUMENTED, live-verification pending** — a flaky connection (`tls: bad record MAC`) stalled tei-rerank's ~2.3 GB weight download and blocks new NuGet restores. Re-verify both when the network is stable (Step 1 = `curl localhost:8091/rerank`; Step 4 = restore + `dotnet build -warnaserror`). Tasks 2+ may proceed against the confirmed FTS/RLS shape now.
+> **Status:** all keystones **CONFIRMED live** (2026-06-15). FTS/RLS + migration-free against the real `pgvector/pgvector:pg16`; tei-rerank `/rerank` against the live `bge-reranker-v2-m3` container (local weights); the `IChatClient` package set restored + builds. The earlier `tls: bad record MAC` network block was cleared (weights pulled to `./tei-models/`, NuGet restored).
 
-- **tei-rerank `/rerank` contract — DOCUMENTED (live pending):** per the HF Text-Embeddings-Inference rerank API: `POST /rerank` body `{"query": "<original query>", "texts": ["<doc0>", "<doc1>", …], "raw_scores": false}` → `200` with `[{"index": <int>, "score": <double>}, …]` **sorted by score descending**; `index` is the position in the request `texts[]`; with `raw_scores:false` the score is the sigmoid-normalized relevance in `[0,1]` (set `raw_scores:true` for raw logits). The `CrossEncoderRerankProvider` (Task 3) re-keys results back to input order. **Live re-check pending:** `curl -s localhost:8091/rerank -d '{"query":"floral light roast","texts":["…yirgacheffe…","…espresso…"],"raw_scores":false}'`.
+- **tei-rerank `/rerank` contract — ✅ CONFIRMED live:** `POST /rerank` body `{"query": "<original query>", "texts": ["<doc0>", "<doc1>", …], "raw_scores": false}` → `200` with `[{"index": <int>, "score": <double>}, …]` **sorted by score descending**; `index` is the position in the request `texts[]`. **Confirmed against the live container:** `raw_scores:false` → sigmoid-normalized `[0,1]` (floral query: `[{0,0.9427},{1,0.0000549}]`); `raw_scores:true` → raw logits (`[{0,2.801},{1,-9.810}]`). The `CrossEncoderRerankProvider` (Task 3) sends `raw_scores:false` and maps `[{index,score}]` → `RerankScore` — exact match; the opt-in `[LiveRerank]` test passes against the live container.
 - **FTS query shape — ✅ CONFIRMED live:** `SELECT id AS "Id", ts_rank_cd(search_vector, websearch_to_tsquery('english', {0}))::float8 AS "Rank" FROM knowledge_chunks WHERE search_vector @@ websearch_to_tsquery('english', {0}) [AND doc_type = {1}] ORDER BY "Rank" DESC LIMIT {N}` via `db.Database.SqlQueryRaw<FtsHit>(sql, term, n)` where `private sealed record FtsHit(Guid Id, double Rank);`. **Confirmed:** binds and materializes; the **`::float8` cast is REQUIRED** (`ts_rank_cd` returns `float4`/`real`; without the cast it won't map to `double Rank`); column aliases `"Id"`/`"Rank"` map to the record by name; then a scoped `db.KnowledgeChunks.Where(c => ids.Contains(c.Id))` re-read materializes entities, re-attaching `Rank` as `SparseScore`. (`FromSqlRaw<KnowledgeChunk>` is rejected: it cannot surface the computed `rank` — JC-1.)
 - **Migration-free proof — ✅ CONFIRMED live:** from `backend/`, `dotnet ef migrations add ProbeNoOp -p src/Infrastructure -s src/Api` produced an **empty `Up()` and `Down()`** with the entity unchanged — the unmapped generated `search_vector` does not trigger a spurious migration (JC-1 baseline holds). **Cleanup note:** `dotnet ef migrations remove` needs a live DB (the design-time placeholder conn `127.0.0.1:5432` fails offline), so remove the probe by deleting the two `…_ProbeNoOp.cs`/`.Designer.cs` files and `git restore` the snapshot (its only diff is a cosmetic CRLF→LF touch). Re-run after the slice-3 C# changes to keep the bar green.
 - **Sparse-arm RLS — ✅ CONFIRMED live:** the `SqlQueryRaw` FTS read on the `BrandScope`-bound `AppDbContext` connection runs inside the transaction-scoped `set_config('app.current_brand', …, true)` and **is RLS-scoped** — the spike bound Brand A, FTS-queried `"roast"` (present in both brands' identical corpus), and got **zero Brand-B chunks** (ownership cross-checked via the superuser context; vacuity guard confirmed B genuinely has matching chunks). The scoped entity re-read on the same connection is RLS-filtered too. The `.claude/rules/infrastructure.md` carve-out authorizes exactly this read-only FTS use.
-- **Union/dedup shape — ✅ confirmed:** dense top-N (existing LINQ) ∪ sparse top-N (`SqlQueryRaw<FtsHit>` projection → scoped re-read) deduped by `chunk.Id` into one unranked recall set. Candidate carrier carries `Id, DocId, Content, DocType, Facet, Metadata`, plus **`DenseScore` and `SparseScore`** (max-merged on dedup) for the rerank-off ordering (item 4).
-- **`IChatClient` (Anthropic-backed) — DOCUMENTED (live pending):** plan to pin `Microsoft.Extensions.AI` (the `IChatClient` abstraction) + an Anthropic-backed provider that builds an `IChatClient`. The transformer injects `IChatClient` and calls `await chat.GetResponseAsync(prompt, new ChatOptions { ModelId = "claude-haiku-4-5", MaxOutputTokens = 256 }, ct)`, then reads `response.Text`. **Live re-check pending (network):** confirm the exact provider package + builder registration, that `ChatOptions.ModelId` takes the bare config string, and that it binds on .NET 10 (`dotnet build -warnaserror`). Compile-only — CI never calls Claude (the mock transformer covers CI/ablation). The single Claude-call abstraction the generation slice reuses (item 6).
+- **Union/dedup + RRF fusion — ✅ confirmed:** dense top-N (LINQ, cosine order) ∪ sparse top-N (`SqlQueryRaw<FtsHit>` projection → scoped re-read, ts_rank order) deduped by `chunk.Id`. **Fusion = Reciprocal Rank Fusion, k≈60** (`RrfFusion`, internal): `score(id) = Σ_arms 1/(k + rank)`, rank from each arm's ordering. This is the rerank-OFF ordering (the sanctioned rank-based fallback — supersedes the earlier `Max(DenseScore, SparseScore)`, which compared incomparable cosine-vs-ts_rank scales); when rerank is ON the cross-encoder is the fusion authority and RRF is ignored. The candidate carries `Id, DocId, Content, DocType, Facet, Metadata, RrfScore`.
+- **`IChatClient` (Anthropic-backed) — ✅ CONFIRMED (restored + builds):** pinned `Microsoft.Extensions.AI 10.6.0` (the `IChatClient` abstraction; the 10.x line MAF 1.10.0 requires transitively — a 9.x pin is an NU1109 downgrade) + `Anthropic.SDK 5.4.3`. The concrete client is `new Anthropic.SDK.AnthropicClient(apiKey).Messages` — a `MessagesEndpoint` that implements `IChatClient` (explicit impl). `ChatQueryTransformer` injects `IChatClient` and calls `await chat.GetResponseAsync(prompt, new ChatOptions { ModelId = "claude-haiku-4-5", MaxOutputTokens = 256 }, ct)`, then reads `response.Text`. CI never calls Claude (the mock transformer covers CI/ablation). The single Claude-call abstraction the generation slice reuses (item 6).
 
 ---
 
@@ -1186,23 +1186,26 @@ Expected PASS (all-off default keeps them byte-identical). If any fails, the sea
 
 **Shipped (commits on `feat/rag-hybrid-rerank`):** Task 1 spike `f920687`; Task 2 config `09eac80`;
 Task 3 rerank provider `33b9bc5`; Task 4 sparse arm + union `aec39f3`; Task 5 rerank + blend +
-recency `13e0e31`; Task 7 ablation + gates `679f23d`. **Task 6 (Haiku `IChatClient` transformer +
-S0 degrade) is the only task outstanding — deferred on the network-blocked `Microsoft.Extensions.AI`
-package.** S0's interface + deterministic mock + pipeline wiring already landed (Task 4); S0 runs in
-the ablation via the mock.
+recency `13e0e31`; Task 7 ablation + gates `679f23d`; **Task 6 (IChatClient transformer + S0 degrade)
++ RRF fusion + live verify** in the final commit. **All 7 tasks complete.** The earlier network block
+(`tls: bad record MAC`) was cleared by the owner (weights → `./tei-models/`, NuGet restored).
 
-- [x] **Test-level proofs (offline, all green):**
+- [x] **Test-level proofs (all green):**
   - Sparse-arm isolation — brand A/B FTS retrieval returns zero cross-brand chunks, vacuity-guarded.
   - Rerank reorders + metadata boost — the perf blend surfaces the higher-engagement `historical_post`; β=0 control = pure rerank order.
-  - Recency — the fresher `market_intel` doc outranks the stale one via `δ·recencyDecay` (seed doc added).
+  - Recency — the fresher `market_intel` doc outranks the stale one via `δ·recencyDecay`.
   - Ablation — all-off = slice-2 dense-only top chunk; S0/sparse/rerank/full each engage without crashing.
-  - Degrade — tei-rerank unreachable → recall-order results + `rerank.failed` ToolError, no crash.
-- [x] **Code gates green:** `dotnet build -warnaserror` (0 warn); `dotnet format --verify-no-changes`;
-  full `dotnet test` (33 unit + 56 integration, 2 live opt-in skipped); `Category=Isolation` 27/28
-  (dense **and** sparse arms); slice-2 regression parity; gitleaks (pre-commit) clean; **NO new migration**.
-- [x] **Confirmed-contracts cheat-sheet:** FTS `SqlQueryRaw<FtsHit>` projection + migration-free proof
-  ✅ live-confirmed; tei-rerank `/rerank` + `IChatClient` shapes documented (live verify pending network).
-- [ ] **PENDING — network:** Task 6 (`ChatQueryTransformer` + package + `chat` DI branch + Haiku-degrade
-  test); live `curl` of tei-rerank `/rerank`; opt-in `LiveRerank`/`LiveEmbeddings` runs; full
-  `docker compose` smoke with toggles flipped on (rerank top-k differs from dense order; `/health` Healthy).
+  - **Two degrade paths** — tei-rerank unreachable → RRF-order results + `rerank.failed`; query-transform unreachable → single-query + `querytransform.failed`; both no crash (DL-022).
+  - **RRF fusion** — `RrfFusion` unit-tested (cross-arm agreement, k≈60); the rerank-OFF dense∪sparse order is RRF, not `Max`.
+  - **Live tei-rerank** — opt-in `[LiveRerank]` passes against the real `bge-reranker-v2-m3`; `/rerank` shape confirmed.
+- [x] **Code gates green (2026-06-15):** `dotnet build -warnaserror` (0 warn); `dotnet format --verify-no-changes`;
+  full `dotnet test` **94 passed / 2 skipped (opt-in live) / 0 failed**; `Category=Isolation` **27 passed /
+  1 skipped (opt-in LiveEmbeddings) / 0 failed**; slice-2 regression parity; gitleaks (pre-commit) clean; **NO new migration**.
+- [x] **Confirmed-contracts cheat-sheet:** FTS `SqlQueryRaw<FtsHit>` + migration-free + tei-rerank `/rerank`
+  + `IChatClient` (Anthropic.SDK 5.4.3 / Microsoft.Extensions.AI 10.6.0) — all ✅ live-confirmed.
+- [x] **Live local TEI:** weights at `./tei-models/bge-reranker-v2-m3` (gitignored); committed `docker-compose.yml`
+  keeps `--model-id BAAI/bge-reranker-v2-m3` (Hub); a gitignored `docker-compose.override.yml` points the
+  local container at the offline weights.
+- [ ] **Not run (optional):** full 9-service `docker compose` end-to-end smoke with toggles flipped on
+  (the targeted live tei-rerank verify above covers the rerank path).
 ```

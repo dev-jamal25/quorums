@@ -40,6 +40,12 @@
          1.x at wire-in time. The durable pause/resume stays in the AgentRun state
          machine (DL-015) — MAF runs only inside a job segment. -->
     <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.10.0" />
+    <!-- S0 query-transform: Claude via Microsoft.Extensions.AI IChatClient (DL-025, item 6).
+         Microsoft.Extensions.AI is pinned to the 10.x (.NET-10-aligned) line: Microsoft.Agents.AI.Workflows
+         1.10.0 already requires Microsoft.Extensions.AI >= 10.6.0 transitively, so a 9.x pin is a
+         downgrade (NU1109). Anthropic.SDK exposes an IChatClient via AnthropicClient.Messages. -->
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.6.0" />
+    <PackageVersion Include="Anthropic.SDK" Version="5.4.3" />
     <PackageVersion Include="VaultSharp" Version="1.17.5.1" />
     <PackageVersion Include="Minio" Version="6.0.3" />
     <PackageVersion Include="Serilog.AspNetCore" Version="8.0.3" />

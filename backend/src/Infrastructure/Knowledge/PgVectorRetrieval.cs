@@ -13,11 +13,11 @@ namespace Backend.Infrastructure.Knowledge;
 
 /// <summary>
 /// The four-stage hybrid retrieval pipeline (DL-025), internal + config-gated behind
-/// <see cref="RetrievalOptions"/>: S0 query transform, S1 dense ∪ sparse recall, S2 cross-encoder
-/// rerank + metadata blend. <c>Retrieve</c> is the only public surface. Brand isolation is the RLS
-/// policy via the bound <c>BrandScope</c> — never a manual WHERE brand_id (the sparse arm's raw SQL
-/// runs on that same scoped connection); <c>docType</c> is an explicit content filter.
-/// All-toggles-off reproduces slice-2 dense-only behaviour.
+/// <see cref="RetrievalOptions"/>: S0 query transform, S1 dense ∪ sparse recall fused by RRF,
+/// S2 cross-encoder rerank + metadata blend. <c>Retrieve</c> is the only public surface. Brand
+/// isolation is the RLS policy via the bound <c>BrandScope</c> — never a manual WHERE brand_id
+/// (the sparse arm's raw SQL runs on that same scoped connection); <c>docType</c> is an explicit
+/// content filter. All-toggles-off reproduces slice-2 dense-only behaviour.
 /// </summary>
 public sealed class PgVectorRetrieval : IRetrievalService
 {
@@ -46,16 +46,17 @@ public sealed class PgVectorRetrieval : IRetrievalService
         var topK = k > 0 ? k : _options.FinalK;
         try
         {
-            // S0 — query transform (off → the single original query).
-            var variants = await VariantsAsync(query).ConfigureAwait(false);
+            // S0 — query transform (off → the single original query); a failure degrades to the
+            // single query + querytransform.failed, never an exception (DL-022).
+            var (variants, s0Degrade) = await VariantsAsync(query).ConfigureAwait(false);
 
-            // S1 — hybrid recall: dense ∪ sparse, deduped, unranked.
+            // S1 — hybrid recall: dense ∪ sparse, deduped, fused by RRF (rank-based, rerank-off order).
             var candidates = await RecallAsync(variants, docType, _options.RecallDepth).ConfigureAwait(false);
 
-            // S2 — rerank + metadata blend; a rerank failure degrades to recall order + ToolError.
-            var (ranked, degrade) = await RankAsync(query, candidates, topK).ConfigureAwait(false);
+            // S2 — rerank + metadata blend; a rerank failure degrades to RRF order + rerank.failed.
+            var (ranked, s2Degrade) = await RankAsync(query, candidates, topK).ConfigureAwait(false);
 
-            return new RetrievalResult(ranked, Grounded: ranked.Count > 0, degrade);
+            return new RetrievalResult(ranked, Grounded: ranked.Count > 0, s0Degrade ?? s2Degrade);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -65,51 +66,71 @@ public sealed class PgVectorRetrieval : IRetrievalService
     }
 
     // S0 — multi-query expansion. The original query is always pooled so a bad paraphrase set never
-    // loses it; the reranker still scores the pool against the original (granular degrade in Task 6).
-    private async Task<IReadOnlyList<string>> VariantsAsync(string query)
+    // loses it; the reranker still scores the pool against the original. A transformer failure
+    // degrades to the single original query + a structured ToolError (never an exception).
+    private async Task<(IReadOnlyList<string> Variants, ToolError? Degrade)> VariantsAsync(string query)
     {
         if (!_options.QueryTransformEnabled)
         {
-            return [query];
+            return ([query], null);
         }
 
-        var expanded = await _transform.ExpandAsync(query, _options.QueryVariants).ConfigureAwait(false);
-        var set = new List<string> { query };
-        set.AddRange(expanded.Where(v => !string.Equals(v, query, StringComparison.OrdinalIgnoreCase)));
-        return set;
+        try
+        {
+            var expanded = await _transform.ExpandAsync(query, _options.QueryVariants).ConfigureAwait(false);
+            var set = new List<string> { query };
+            set.AddRange(expanded.Where(v => !string.Equals(v, query, StringComparison.OrdinalIgnoreCase)));
+            return (set, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ([query], new ToolError("querytransform.failed", ex.Message, true));
+        }
     }
 
-    // S1 — recall = dense ∪ sparse, deduped by chunk id (merging each arm's score), unranked.
+    // S1 — recall = dense ∪ sparse. Each arm yields a rank-ordered list; the union is deduped by
+    // chunk id and the per-arm ranks are fused with RRF (k≈60). The RRF score is the rerank-OFF
+    // ordering; when rerank is ON it is ignored (the cross-encoder is the ranking authority).
     private async Task<List<Candidate>> RecallAsync(IReadOnlyList<string> variants, string? docType, int n)
     {
-        var merged = new Dictionary<Guid, Candidate>();
+        var byId = new Dictionary<Guid, Candidate>();
+        var rankedLists = new List<IReadOnlyList<Guid>>();
+
         foreach (var variant in variants)
         {
             if (_options.DenseEnabled)
             {
-                foreach (var c in await DenseArmAsync(variant, docType, n).ConfigureAwait(false))
+                var dense = await DenseArmAsync(variant, docType, n).ConfigureAwait(false);
+                foreach (var c in dense)
                 {
-                    Merge(merged, c);
+                    byId.TryAdd(c.Id, c);
                 }
+
+                rankedLists.Add(dense.Select(c => c.Id).ToList());
             }
 
             if (_options.SparseEnabled)
             {
-                foreach (var c in await SparseArmAsync(variant, docType, n).ConfigureAwait(false))
+                var sparse = await SparseArmAsync(variant, docType, n).ConfigureAwait(false);
+                foreach (var c in sparse)
                 {
-                    Merge(merged, c);
+                    byId.TryAdd(c.Id, c);
                 }
+
+                rankedLists.Add(sparse.Select(c => c.Id).ToList());
             }
         }
 
-        return merged.Values.ToList();   // unranked recall set; S2 ranks
+        var rrf = RrfFusion.Fuse(rankedLists, RrfFusion.DefaultK);
+        return byId.Values.Select(c => c with { RrfScore = rrf.GetValueOrDefault(c.Id, 0.0) }).ToList();
     }
 
+    // Dense arm — pgvector cosine, returned in rank order (nearest first); the position is the rank
+    // RRF consumes. Brand scope is RLS (the bound BrandScope) — NEVER a hand-written WHERE brand_id.
     private async Task<List<Candidate>> DenseArmAsync(string variant, string? docType, int n)
     {
         var queryVector = new Vector(await _embeddings.EmbedQueryAsync(variant).ConfigureAwait(false));
 
-        // Brand scope is RLS (the bound BrandScope) — NEVER a hand-written WHERE brand_id.
         IQueryable<KnowledgeChunk> q = _db.KnowledgeChunks.AsNoTracking().Where(c => c.Embedding != null);
         if (docType is not null)
         {
@@ -134,15 +155,14 @@ public sealed class PgVectorRetrieval : IRetrievalService
             .ConfigureAwait(false);
 
         return hits.Select(h => new Candidate(
-            h.Id, h.KnowledgeDocId, h.Content, h.DocType, h.Facet, h.Metadata,
-            DenseScore: 1.0 - h.Distance, SparseScore: 0.0)).ToList();
+            h.Id, h.KnowledgeDocId, h.Content, h.DocType, h.Facet, h.Metadata, RrfScore: 0.0)).ToList();
     }
 
+    // Sparse arm — Postgres FTS over the unmapped generated search_vector, returned in ts_rank order
+    // (the rank RRF consumes). Read-only raw SQL on the BrandScope-bound connection → RLS scopes it
+    // (carve-out in .claude/rules/infrastructure.md; never a manual WHERE brand_id).
     private async Task<List<Candidate>> SparseArmAsync(string query, string? docType, int n)
     {
-        // Read-only FTS on the BrandScope-bound connection → RLS scopes it (carve-out in
-        // .claude/rules/infrastructure.md; never a manual WHERE brand_id). docType is an explicit
-        // content filter, parameterized. Project (id, ts_rank_cd) so the FTS rank survives (item 4).
         const string cols =
             "SELECT id AS \"Id\", ts_rank_cd(search_vector, websearch_to_tsquery('english', {0}))::float8 AS \"Rank\" " +
             "FROM knowledge_chunks WHERE search_vector @@ websearch_to_tsquery('english', {0}) ";
@@ -159,31 +179,30 @@ public sealed class PgVectorRetrieval : IRetrievalService
             return [];
         }
 
-        var rank = hits.ToDictionary(h => h.Id, h => h.Rank);
-        var ids = rank.Keys.ToList();
-
-        // Scoped entity re-read (also RLS-bound) for Content/Metadata the blend needs.
+        // Re-read entities scoped (also RLS-bound) for Content/Metadata, preserving the ts_rank order.
+        var position = hits.Select((h, i) => (h.Id, i)).ToDictionary(x => x.Id, x => x.i);
+        var ids = position.Keys.ToList();
         var chunks = await _db.KnowledgeChunks.AsNoTracking()
             .Where(c => ids.Contains(c.Id)).ToListAsync().ConfigureAwait(false);
 
-        return chunks.Select(c => new Candidate(
-            c.Id, c.KnowledgeDocId, c.Content, c.DocType, c.Facet, c.Metadata,
-            DenseScore: 0.0, SparseScore: rank[c.Id])).ToList();
+        return chunks
+            .OrderBy(c => position[c.Id])
+            .Select(c => new Candidate(
+                c.Id, c.KnowledgeDocId, c.Content, c.DocType, c.Facet, c.Metadata, RrfScore: 0.0))
+            .ToList();
     }
 
     // S2 — the cross-encoder is the ranking authority; the per-docType metadata blend (JC-2) then
-    // combines normalized relevance with performance/recency. Rerank-off falls back to recall order;
-    // a rerank failure degrades to recall order + a ToolError (DL-022) — never an exception.
+    // combines normalized relevance with performance/recency. Rerank-off falls back to RRF order;
+    // a rerank failure degrades to RRF order + a ToolError (DL-022) — never an exception.
     private async Task<(List<RetrievedChunk> Ranked, ToolError? Degrade)> RankAsync(
         string originalQuery, List<Candidate> candidates, int topK)
     {
         if (!_options.RerankEnabled || candidates.Count == 0)
         {
-            // Rerank off: order by best-available recall score. Dense-only → cosine (slice-2 parity);
-            // sparse-only → ts_rank (DenseScore 0); both → the stronger signal (item 4).
-            var byRecall = candidates.OrderByDescending(RecallScore).Take(topK)
-                .Select(c => ToChunk(c, RecallScore(c))).ToList();
-            return (byRecall, null);
+            var byRrf = candidates.OrderByDescending(c => c.RrfScore).Take(topK)
+                .Select(c => ToChunk(c, c.RrfScore)).ToList();
+            return (byRrf, null);
         }
 
         IReadOnlyList<RerankScore> scores;
@@ -195,8 +214,8 @@ public sealed class PgVectorRetrieval : IRetrievalService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            var fallback = candidates.OrderByDescending(RecallScore).Take(topK)
-                .Select(c => ToChunk(c, RecallScore(c))).ToList();
+            var fallback = candidates.OrderByDescending(c => c.RrfScore).Take(topK)
+                .Select(c => ToChunk(c, c.RrfScore)).ToList();
             return (fallback, new ToolError("rerank.failed", ex.Message, true));
         }
 
@@ -222,6 +241,9 @@ public sealed class PgVectorRetrieval : IRetrievalService
 
     private static double Normalize(double v, double min, double max) => max <= min ? 1.0 : (v - min) / (max - min);
 
+    private static RetrievedChunk ToChunk(Candidate c, double score) =>
+        new(c.Id, c.DocId, c.Content, c.DocType, c.Facet, score);
+
     private static double? Performance(Candidate c)
     {
         var m = MetadataOf(c);
@@ -236,22 +258,11 @@ public sealed class PgVectorRetrieval : IRetrievalService
     private static KnowledgeChunkMetadata? MetadataOf(Candidate c) =>
         c.Metadata is null ? null : JsonSerializer.Deserialize<KnowledgeChunkMetadata>(c.Metadata);
 
-    // Dedup by chunk id, keeping the max of each arm's score so a chunk found by BOTH arms carries
-    // its dense cosine AND its FTS rank (item 4 — needed for the rerank-OFF ordering).
-    private static void Merge(Dictionary<Guid, Candidate> acc, Candidate c) =>
-        acc[c.Id] = acc.TryGetValue(c.Id, out var e)
-            ? e with { DenseScore = Math.Max(e.DenseScore, c.DenseScore), SparseScore = Math.Max(e.SparseScore, c.SparseScore) }
-            : c;
-
-    private static double RecallScore(Candidate c) => Math.Max(c.DenseScore, c.SparseScore);
-
-    private static RetrievedChunk ToChunk(Candidate c, double score) =>
-        new(c.Id, c.DocId, c.Content, c.DocType, c.Facet, score);
-
-    // Internal recall candidate — carries Metadata for S2's blend (still clean: Content is the only text).
+    // Internal recall candidate — carries Metadata for S2's blend (still clean: Content is the only
+    // text). RrfScore is the rank-fused recall score (rerank-off ordering); rerank ON ignores it.
     private sealed record Candidate(
         Guid Id, Guid DocId, string Content, DocType DocType, KnowledgeFacet? Facet, string? Metadata,
-        double DenseScore, double SparseScore);
+        double RrfScore);
 
     private sealed record FtsHit(Guid Id, double Rank);
 }

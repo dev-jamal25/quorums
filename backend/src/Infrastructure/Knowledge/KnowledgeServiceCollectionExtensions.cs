@@ -1,7 +1,11 @@
+using Anthropic.SDK;
 using Backend.Core.Knowledge;
+using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Knowledge.Seed;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Infrastructure.Knowledge;
 
@@ -54,11 +58,24 @@ public static class KnowledgeServiceCollectionExtensions
             });
         }
 
-        // S0 query transformer (DL-025). The QueryTransform:Mode switch (chat = IChatClient-backed
-        // ChatQueryTransformer | mock) lands in Task 6 with the Microsoft.Extensions.AI package; until
-        // then the deterministic mock is registered so DI resolves and CI/ablation run offline (S0 is
-        // off by default, so this never affects runtime behaviour).
-        services.AddSingleton<IQueryTransformer, DeterministicQueryTransformer>();
+        // S0 query transformer (DL-025), config-gated by QueryTransform:Mode (CI uses mock).
+        var qtMode = (configuration["QueryTransform:Mode"] ?? "chat").Trim().ToLowerInvariant();
+        if (qtMode == "mock")
+        {
+            services.AddSingleton<IQueryTransformer, DeterministicQueryTransformer>();
+        }
+        else
+        {
+            // The single Claude-call path (item 6): an Anthropic-backed Microsoft.Extensions.AI
+            // IChatClient. ApiKey from AnthropicOptions (Vault/secret); the model id is config-bound
+            // on the call (ChatOptions.ModelId). AnthropicClient.Messages implements IChatClient.
+            services.AddSingleton<IChatClient>(sp =>
+            {
+                var apiKey = sp.GetRequiredService<IOptions<AnthropicOptions>>().Value.ApiKey;
+                return new AnthropicClient(apiKey).Messages;
+            });
+            services.AddSingleton<IQueryTransformer, ChatQueryTransformer>();
+        }
 
         return services;
     }

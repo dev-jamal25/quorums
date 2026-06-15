@@ -22,6 +22,12 @@ public sealed class RetrievalDegradeTests
             => throw new HttpRequestException("tei-rerank unreachable");
     }
 
+    private sealed class ThrowingTransform : IQueryTransformer
+    {
+        public Task<IReadOnlyList<string>> ExpandAsync(string q, int variants, CancellationToken ct = default)
+            => throw new HttpRequestException("query-transform LLM unreachable");
+    }
+
     [Fact]
     public async Task Rerank_unreachable_degrades_to_recall_order_with_toolerror()
     {
@@ -36,6 +42,23 @@ public sealed class RetrievalDegradeTests
             Assert.NotEmpty(result.Chunks);                  // recall-order fallback, no crash
             Assert.NotNull(result.Error);
             Assert.Equal("rerank.failed", result.Error!.Code);
+        }
+    }
+
+    [Fact]
+    public async Task Query_transform_unreachable_degrades_to_single_query_with_toolerror()
+    {
+        var opts = new RetrievalOptions { DenseEnabled = true, QueryTransformEnabled = true, RerankEnabled = false };
+        var (db, scope, retrieval) = _fixture.CreateRetrieval(_fixture.BrandA, opts, transform: new ThrowingTransform());
+        await using (db)
+        {
+            await using var handle = await scope.BeginAsync();
+
+            var result = await retrieval.Retrieve(_fixture.BrandAProductQuery, _fixture.BrandA, docType: "Product", k: 3);
+
+            Assert.NotEmpty(result.Chunks);                  // ran on the single original query, no crash
+            Assert.NotNull(result.Error);
+            Assert.Equal("querytransform.failed", result.Error!.Code);
         }
     }
 }
