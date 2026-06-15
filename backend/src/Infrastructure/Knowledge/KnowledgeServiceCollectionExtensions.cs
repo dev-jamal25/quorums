@@ -38,6 +38,22 @@ public static class KnowledgeServiceCollectionExtensions
             });
         }
 
+        // S2 reranker (DL-024/025), config-gated by Reranker:Mode (mirrors Embeddings:Mode).
+        var rerankMode = (configuration["Reranker:Mode"] ?? "tei").Trim().ToLowerInvariant();
+        if (rerankMode == "mock")
+        {
+            services.AddSingleton<IRerankProvider, DeterministicRerankProvider>();
+        }
+        else
+        {
+            var rerankEndpoint = configuration["Reranker:Endpoint"] ?? "tei-rerank:80";
+            services.AddHttpClient<IRerankProvider, CrossEncoderRerankProvider>(client =>
+            {
+                client.BaseAddress = new Uri($"http://{rerankEndpoint}");
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
+        }
+
         return services;
     }
 }
