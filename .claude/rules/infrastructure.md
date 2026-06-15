@@ -11,6 +11,7 @@ paths:
 - Brand scope is set by the `DbConnectionInterceptor` via transaction-scoped `set_config('app.current_brand', …, true)`. Every read/write goes through the brand-scoped `DbContext`.
 - NEVER use `IgnoreQueryFilters()`, raw SQL, or a second unscoped context to "just get the data." Cross-brand access (admin, migrations) is a separate, explicitly-named path that gets reviewed.
 - If a query needs a brand id in a `WHERE` clause to be correct, the isolation model is broken — fix the scope, not the query.
+- **Carve-out — read-only FTS over the generated `tsvector`.** The brand-knowledge sparse-retrieval arm (`PgVectorRetrieval`) MAY use `FromSqlRaw` / `SqlQueryRaw` **only** to read the unmapped, generated `search_vector` column (which EF/LINQ cannot express), and **only on the brand-scoped `DbContext` connection** so the session-scoped `set_config('app.current_brand', …)` RLS policy still applies. It is read-only, NEVER sets a brand id in a `WHERE`, and is proven leak-free by the sparse-arm isolation test (`Category=Isolation`). Any other raw SQL remains banned.
 
 ## EF Core / Npgsql
 - Async only: `ToListAsync`, `SaveChangesAsync`, etc. No sync-over-async, no `.Result`/`.Wait()`.
