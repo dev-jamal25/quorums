@@ -39,7 +39,7 @@ public sealed class RetrievalOptions
 /// only place metadata (performance / recency / segment) touches the final score. Config-bound,
 /// never literals. With β=γ=δ=0 the blend collapses to the pure reranker order.
 /// </summary>
-public sealed class RetrievalBlendOptions
+public sealed record RetrievalBlendOptions
 {
     /// <summary>α — relevance weight (baseline = 1).</summary>
     public double Alpha { get; init; } = 1.0;

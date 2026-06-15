@@ -60,6 +60,14 @@ public sealed class KnowledgeFixture : IAsyncLifetime
     public Guid BrandAProductChunkId =>
         DeterministicGuid.From(DeterministicGuid.From(BrandA, CoffeeRoasterCorpus.RelevanceProductTitle), "0");
 
+    /// <summary>Brand A's higher-engagement historical_post chunk 0 — the perf-blend boost target.</summary>
+    public Guid PourOverSundayChunkId =>
+        DeterministicGuid.From(DeterministicGuid.From(BrandA, "Post - Pour Over Sunday"), "0");
+
+    /// <summary>Brand A's fresh (2026) market_intel chunk 0 — the recency-blend target.</summary>
+    public Guid MarketIntelFreshChunkId =>
+        DeterministicGuid.From(DeterministicGuid.From(BrandA, "Intel - Specialty Trend 2026"), "0");
+
     public async Task InitializeAsync()
     {
         await _container.StartAsync();

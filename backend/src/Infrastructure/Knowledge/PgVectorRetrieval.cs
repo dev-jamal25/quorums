@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Backend.Core.Domain;
 using Backend.Core.Knowledge;
 using Backend.Core.Orchestration;
@@ -51,10 +52,10 @@ public sealed class PgVectorRetrieval : IRetrievalService
             // S1 — hybrid recall: dense ∪ sparse, deduped, unranked.
             var candidates = await RecallAsync(variants, docType, _options.RecallDepth).ConfigureAwait(false);
 
-            // S2 — rank (rerank when enabled; the metadata blend lands in Task 5).
-            var ranked = await RankAsync(query, candidates, topK).ConfigureAwait(false);
+            // S2 — rerank + metadata blend; a rerank failure degrades to recall order + ToolError.
+            var (ranked, degrade) = await RankAsync(query, candidates, topK).ConfigureAwait(false);
 
-            return new RetrievalResult(ranked, Grounded: ranked.Count > 0);
+            return new RetrievalResult(ranked, Grounded: ranked.Count > 0, degrade);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -170,25 +171,70 @@ public sealed class PgVectorRetrieval : IRetrievalService
             DenseScore: 0.0, SparseScore: rank[c.Id])).ToList();
     }
 
-    // S2 — the cross-encoder is the ranking authority. The per-docType metadata blend lands in Task 5;
-    // for now rerank produces pure relevance order, and rerank-off falls back to recall-score order.
-    private async Task<List<RetrievedChunk>> RankAsync(string originalQuery, List<Candidate> candidates, int topK)
+    // S2 — the cross-encoder is the ranking authority; the per-docType metadata blend (JC-2) then
+    // combines normalized relevance with performance/recency. Rerank-off falls back to recall order;
+    // a rerank failure degrades to recall order + a ToolError (DL-022) — never an exception.
+    private async Task<(List<RetrievedChunk> Ranked, ToolError? Degrade)> RankAsync(
+        string originalQuery, List<Candidate> candidates, int topK)
     {
         if (!_options.RerankEnabled || candidates.Count == 0)
         {
-            // Dense-only → cosine (slice-2 parity); sparse-only → ts_rank; both → the stronger signal.
-            return candidates.OrderByDescending(RecallScore).Take(topK)
+            // Rerank off: order by best-available recall score. Dense-only → cosine (slice-2 parity);
+            // sparse-only → ts_rank (DenseScore 0); both → the stronger signal (item 4).
+            var byRecall = candidates.OrderByDescending(RecallScore).Take(topK)
                 .Select(c => ToChunk(c, RecallScore(c))).ToList();
+            return (byRecall, null);
         }
 
-        // Reranker scores the pool against the ORIGINAL query (variants only widened recall).
-        var scores = await _rerank.RerankAsync(originalQuery, candidates.Select(c => c.Content).ToList())
-            .ConfigureAwait(false);
-        var rel = scores.ToDictionary(s => s.Index, s => s.Relevance);
+        IReadOnlyList<RerankScore> scores;
+        try
+        {
+            // Reranker scores the pool against the ORIGINAL query (variants only widened recall).
+            scores = await _rerank.RerankAsync(originalQuery, candidates.Select(c => c.Content).ToList())
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var fallback = candidates.OrderByDescending(RecallScore).Take(topK)
+                .Select(c => ToChunk(c, RecallScore(c))).ToList();
+            return (fallback, new ToolError("rerank.failed", ex.Message, true));
+        }
 
-        return candidates.Select((c, i) => ToChunk(c, rel.GetValueOrDefault(i, 0.0)))
-            .OrderByDescending(x => x.Score).Take(topK).ToList();
+        var rel = scores.ToDictionary(s => s.Index, s => s.Relevance);
+        var relMin = rel.Values.Min();
+        var relMax = rel.Values.Max();
+        var perfRaw = candidates.Select(Performance).ToList();
+        var perfMin = perfRaw.Where(p => p.HasValue).Select(p => p!.Value).DefaultIfEmpty(0).Min();
+        var perfMax = perfRaw.Where(p => p.HasValue).Select(p => p!.Value).DefaultIfEmpty(0).Max();
+        var now = DateTimeOffset.UtcNow;
+
+        var ranked = candidates.Select((c, i) =>
+        {
+            var relNorm = Normalize(rel.GetValueOrDefault(i, relMin), relMin, relMax);
+            var perfNorm = perfRaw[i] is double p ? Normalize(p, perfMin, perfMax) : 0.0;
+            var recency = MetadataBlend.RecencyDecay(MetadataOf(c)?.Date, now, _options.Blend.RecencyHalfLifeDays);
+            var score = MetadataBlend.Score(relNorm, perfNorm, segmentMatch: 0.0, recency, c.DocType, _options.Blend);
+            return ToChunk(c, score);
+        }).OrderByDescending(x => x.Score).Take(topK).ToList();
+
+        return (ranked, null);
     }
+
+    private static double Normalize(double v, double min, double max) => max <= min ? 1.0 : (v - min) / (max - min);
+
+    private static double? Performance(Candidate c)
+    {
+        var m = MetadataOf(c);
+        if (m?.EngagementRate is null && m?.Ctr is null)
+        {
+            return null;
+        }
+
+        return ((m.EngagementRate ?? 0) + (m.Ctr ?? 0)) / 2.0;
+    }
+
+    private static KnowledgeChunkMetadata? MetadataOf(Candidate c) =>
+        c.Metadata is null ? null : JsonSerializer.Deserialize<KnowledgeChunkMetadata>(c.Metadata);
 
     // Dedup by chunk id, keeping the max of each arm's score so a chunk found by BOTH arms carries
     // its dense cosine AND its FTS rank (item 4 — needed for the rerank-OFF ordering).

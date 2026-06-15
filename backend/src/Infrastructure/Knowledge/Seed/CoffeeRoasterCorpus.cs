@@ -102,5 +102,17 @@ public static class CoffeeRoasterCorpus
             "Post to the feed about three times a week, mid-morning, when our home brewers are scrolling.",
             null,
             new KnowledgeChunkMetadata { Platform = "instagram", Surface = "feed" }),
+
+        // market_intel — two dated docs sharing an FTS term so the S2 δ·recencyDecay arm has
+        // end-to-end coverage (the fresher 2026 doc must outrank the stale 2024 doc).
+        new(DocType.MarketIntel, null, "Intel - Specialty Trend 2026",
+            "Specialty single-origin demand is climbing; pour-over and light roast lead the trend.",
+            "intel/trend-2026.md",
+            new KnowledgeChunkMetadata { Source = "trade-report", Date = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero) }),
+
+        new(DocType.MarketIntel, null, "Intel - Specialty Trend 2024",
+            "Specialty single-origin demand was climbing; pour-over and light roast led the trend.",
+            "intel/trend-2024.md",
+            new KnowledgeChunkMetadata { Source = "trade-report", Date = new DateTimeOffset(2024, 5, 1, 0, 0, 0, TimeSpan.Zero) }),
     ];
 }
