@@ -54,6 +54,12 @@ public static class KnowledgeServiceCollectionExtensions
             });
         }
 
+        // S0 query transformer (DL-025). The QueryTransform:Mode switch (chat = IChatClient-backed
+        // ChatQueryTransformer | mock) lands in Task 6 with the Microsoft.Extensions.AI package; until
+        // then the deterministic mock is registered so DI resolves and CI/ablation run offline (S0 is
+        // off by default, so this never affects runtime behaviour).
+        services.AddSingleton<IQueryTransformer, DeterministicQueryTransformer>();
+
         return services;
     }
 }

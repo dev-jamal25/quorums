@@ -100,13 +100,22 @@ public sealed class KnowledgeFixture : IAsyncLifetime
     /// <summary>A dense retrieval service on the RLS-subject role bound to <paramref name="brandId"/>,
     /// sharing the same deterministic embedder as ingest (so a seeded doc and a query of the
     /// same vocabulary are nearest neighbours). Default RetrievalOptions = dense-only.</summary>
-    public (AppDbContext Db, IBrandScope Scope, IRetrievalService Retrieval) CreateRetrieval(Guid brandId)
+    public (AppDbContext Db, IBrandScope Scope, IRetrievalService Retrieval) CreateRetrieval(
+        Guid brandId,
+        RetrievalOptions? options = null,
+        IRerankProvider? rerank = null,
+        IQueryTransformer? transform = null)
     {
         var db = CreateDbContext(AppUserConnectionString);
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var retrieval = new PgVectorRetrieval(db, _embeddings, Options.Create(new RetrievalOptions()));
+        var retrieval = new PgVectorRetrieval(
+            db,
+            _embeddings,
+            rerank ?? new DeterministicRerankProvider(),
+            transform ?? new DeterministicQueryTransformer(),
+            Options.Create(options ?? new RetrievalOptions()));
         return (db, scope, retrieval);
     }
 
