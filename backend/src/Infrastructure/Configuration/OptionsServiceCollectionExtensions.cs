@@ -29,6 +29,11 @@ public static class OptionsServiceCollectionExtensions
         services.AddValidatedOptions<QueryTransformOptions>(configuration, QueryTransformOptions.SectionName);
         services.AddValidatedOptions<HangfireOptions>(configuration, HangfireOptions.SectionName);
         services.AddValidatedOptions<MetaOptions>(configuration, MetaOptions.SectionName);
+        // Generation pipeline (DL-027/029/030): model selection, cost prices, platform constraints
+        // — all config-bound, never literals in agent code.
+        services.AddValidatedOptions<GenerationOptions>(configuration, GenerationOptions.SectionName);
+        services.AddValidatedOptions<CostPricesOptions>(configuration, CostPricesOptions.SectionName);
+        services.AddValidatedOptions<PlatformConstraintsOptions>(configuration, PlatformConstraintsOptions.SectionName);
         // Langfuse keys are optional (empty = no-op local tracing); no [Required], so
         // validation is a no-op but the binding stays consistent with every other section.
         services.AddValidatedOptions<LangfuseOptions>(configuration, LangfuseOptions.SectionName);

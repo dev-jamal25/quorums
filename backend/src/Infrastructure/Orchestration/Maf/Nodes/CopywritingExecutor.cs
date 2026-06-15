@@ -26,7 +26,8 @@ public sealed class CopywritingExecutor : Executor<RunState, RunState>
         var caption = new Caption(
             Hook: "stub-hook",
             Body: "stub-body",
-            Hashtags: ["#stub"]);
+            Hashtags: ["#stub"],
+            Grounding: new Grounding(Grounded: false, ChunkIdsUsed: [], Confidence: Confidence.Low));
 
         var now = DateTimeOffset.UtcNow;
         var trace = await _trace.RecordAsync(

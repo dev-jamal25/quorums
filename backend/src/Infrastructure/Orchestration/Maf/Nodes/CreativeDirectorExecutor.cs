@@ -26,8 +26,16 @@ public sealed class CreativeDirectorExecutor : Executor<RunState, RunState>
         var creative = new CreativeDirection(
             VisualConcept: "stub-concept",
             StyleTokens: ["soft"],
-            ColorTokens: ["#ffffff"],
-            MediaPromptBrief: "stub-brief");
+            ColorTokens: [new ColorToken(Name: "white", Hex: "#ffffff")],
+            MediaPromptBrief: new MediaPromptBrief(
+                Subject: "stub-subject",
+                Style: "stub-style",
+                Composition: "stub-composition",
+                Palette: "stub-palette",
+                Mood: "stub-mood",
+                Negative: null,
+                AspectRatio: "1:1"),
+            Grounding: new Grounding(Grounded: false, ChunkIdsUsed: [], Confidence: Confidence.Low));
 
         var now = DateTimeOffset.UtcNow;
         var trace = await _trace.RecordAsync(

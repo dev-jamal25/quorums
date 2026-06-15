@@ -42,7 +42,7 @@ public sealed class MafNodeTests
 
         Assert.NotNull(result.Strategy);
         Assert.Equal("stub-pillar", result.Strategy!.Pillar);
-        Assert.Equal("stub-objective", result.Strategy.Objective);
+        Assert.Equal(Objective.Awareness, result.Strategy.Objective);
         Assert.Contains(result.Trace.Spans, s => s.Node == "strategy" && s.Tool is null && s.Status == "ok");
         // Disjoint ownership: this node touches nothing else.
         Assert.Null(result.Creative);
@@ -59,7 +59,7 @@ public sealed class MafNodeTests
 
         Assert.NotNull(result.Creative);
         Assert.Equal("stub-concept", result.Creative!.VisualConcept);
-        Assert.Equal("stub-brief", result.Creative.MediaPromptBrief);
+        Assert.Equal("stub-subject", result.Creative.MediaPromptBrief.Subject);
         Assert.Contains(result.Trace.Spans, s => s.Node == "creative" && s.Status == "ok");
         Assert.Null(result.Strategy);
         Assert.Null(result.Caption);
@@ -183,7 +183,7 @@ public sealed class MafNodeTests
         var runId = Guid.NewGuid();
         var brandId = Guid.NewGuid();
         var node = new PublishingExecutor(new MockMetaIntegration(), new LocalTraceRecorder());
-        var state = Base(runId, brandId) with { Caption = new Caption("stub-hook", "stub-body", ["#stub"]) };
+        var state = Base(runId, brandId) with { Caption = new Caption("stub-hook", "stub-body", ["#stub"], new Grounding(false, [], Confidence.Low)) };
 
         var result = await node.RunAsync(state);
 
@@ -201,7 +201,7 @@ public sealed class MafNodeTests
         var runId = Guid.NewGuid();
         var brandId = Guid.NewGuid();
         var node = new PublishingExecutor(new MockMetaIntegration(), new LocalTraceRecorder());
-        var state = Base(runId, brandId) with { Caption = new Caption("h", "b", ["#x"]) };
+        var state = Base(runId, brandId) with { Caption = new Caption("h", "b", ["#x"], new Grounding(false, [], Confidence.Low)) };
 
         var first = await node.RunAsync(state);
         var second = await node.RunAsync(state);

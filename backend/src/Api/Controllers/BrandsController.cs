@@ -37,6 +37,7 @@ public sealed class BrandsController : ControllerBase
             request.VoiceDont,
             request.ColorHexes,
             request.ImageryStyle,
+            request.ContentPillars,
             request.AudienceSegments,
             request.AudiencePainPoints,
             request.ProductContext);

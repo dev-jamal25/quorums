@@ -27,9 +27,11 @@ public sealed class ContentStrategistExecutor : Executor<RunState, RunState>
         var strategy = new ContentStrategy(
             Pillar: "stub-pillar",
             Angle: "stub-angle",
-            Objective: "stub-objective",
+            Objective: Objective.Awareness,
             Audience: "stub-audience",
-            CalendarSlot: null);
+            AngleRationale: "stub-rationale",
+            CalendarSlot: null,
+            Grounding: new Grounding(Grounded: false, ChunkIdsUsed: [], Confidence: Confidence.Low));
 
         var now = DateTimeOffset.UtcNow;
         var trace = await _trace.RecordAsync(
