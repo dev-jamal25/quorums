@@ -1,3 +1,4 @@
+using Backend.Core.Domain;
 using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Knowledge;
 using Backend.Infrastructure.Knowledge.Seed;
@@ -28,7 +29,7 @@ public sealed class DenseRelevanceTests
             await using var handle = await scope.BeginAsync();
 
             var result = await retrieval.Retrieve(
-                _fixture.BrandAProductQuery, _fixture.BrandA, docType: "product", k: 3);
+                _fixture.BrandAProductQuery, _fixture.BrandA, docType: DocType.Product, k: 3);
 
             Assert.True(result.Grounded);
             Assert.Contains(_fixture.BrandAProductChunkId, result.Chunks.Select(c => c.ChunkId));

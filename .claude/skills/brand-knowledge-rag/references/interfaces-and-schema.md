@@ -17,7 +17,7 @@ implementation.
 ```csharp
 public interface IRetrievalService
 {
-    Task<RetrievalResult> Retrieve(string query, Guid brandId, string? docType, int k);
+    Task<RetrievalResult> Retrieve(string query, Guid brandId, DocType? docType, int k);
 }
 ```
 
@@ -26,6 +26,19 @@ public interface IRetrievalService
 - Runs under the RLS-bound `DbContext`; brand scope is the policy, not an argument
   used in a manual `WHERE`.
 - Owns the S2 metadata **blend** (the providers do not).
+- **`docType` is a typed `DocType?` (DL-033), never a string.** A caller cannot pass an
+  unparseable or mis-cased value; `null` = all doc types the caller may read. The dense filter
+  is `c.DocType == value` (EF translates it through the existing converter); the sparse
+  (raw-SQL) arm binds the converter's stored string as a parameter — never a hand-written
+  literal, never `Enum.Parse`.
+
+> **DL-033 — `docType` is typed, and stored `doc_type` is PascalCase.** The column persists
+> the **default enum member-name conversion** (`HasConversion<string>()`): `BrandPlaybook`,
+> `HistoricalPost`, `Product`, `MarketIntel`, `PlatformGuidance` — **not** the DL-026
+> snake_case taxonomy (`brand_playbook`, …). Snake_case is the **conceptual / HTTP-boundary**
+> spelling only; the stored representation is PascalCase and is **not** changed by DL-033 (a
+> pure contract-shape tighten — no runtime/schema change). **⚠ Never filter `doc_type` with a
+> snake_case literal in raw SQL — it matches nothing.**
 
 ### `IEmbeddingProvider` → `NomicEmbeddingProvider` (HTTP → TEI) + CI mock
 ```csharp

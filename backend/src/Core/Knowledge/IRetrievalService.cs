@@ -25,9 +25,11 @@ public sealed record RetrievalResult(
 /// <summary>
 /// The only public retrieval surface (DL-025). The pipeline stages are internal to the
 /// implementation. Brand isolation is the RLS policy via the bound BrandScope — never a
-/// manual <c>WHERE brand_id</c>. <c>docType</c> is an explicit content filter.
+/// manual <c>WHERE brand_id</c>. <c>docType</c> is an explicit content filter — a typed
+/// <see cref="DocType"/> (DL-033), not a string, so a caller can never pass an
+/// unparseable/mis-cased value; <c>null</c> means "all doc types the caller may read".
 /// </summary>
 public interface IRetrievalService
 {
-    Task<RetrievalResult> Retrieve(string query, Guid brandId, string? docType, int k);
+    Task<RetrievalResult> Retrieve(string query, Guid brandId, DocType? docType, int k);
 }
