@@ -1182,14 +1182,27 @@ Expected PASS (all-off default keeps them byte-identical). If any fails, the sea
 
 ---
 
-## Output Summary (fill at completion)
+## Output Summary (run 2026-06-15)
 
-- [ ] Smoke evidence (full `docker compose` stack, toggles flipped on):
-  - `POST /brands` → `brandId`; seed corpus; `Retrieval:SparseEnabled/RerankEnabled/QueryTransformEnabled=true`.
-  - Retrieve a brand-distinctive query → top-k differs from dense-only order (rerank engaged); high-engagement `historical_post` surfaces above a near-tie (blend boost).
-  - Cross-brand: brand A retrieval returns zero brand-B chunks on **both** arms.
-  - tei-rerank stopped → retrieval still returns union-order results + `rerank.failed` ToolError (no crash). Bad Anthropic key → `querytransform.failed`, single-query results.
-  - `/health` → Healthy.
-- [ ] Confirmed-contracts cheat-sheet finalized (tei-rerank `/rerank` shape; FTS `SqlQueryRaw<FtsHit>` projection form; migration-free proof; `IChatClient` call shape + pinned versions).
-- [ ] All CLAUDE.md gates green; **no new migration**.
+**Shipped (commits on `feat/rag-hybrid-rerank`):** Task 1 spike `f920687`; Task 2 config `09eac80`;
+Task 3 rerank provider `33b9bc5`; Task 4 sparse arm + union `aec39f3`; Task 5 rerank + blend +
+recency `13e0e31`; Task 7 ablation + gates `679f23d`. **Task 6 (Haiku `IChatClient` transformer +
+S0 degrade) is the only task outstanding — deferred on the network-blocked `Microsoft.Extensions.AI`
+package.** S0's interface + deterministic mock + pipeline wiring already landed (Task 4); S0 runs in
+the ablation via the mock.
+
+- [x] **Test-level proofs (offline, all green):**
+  - Sparse-arm isolation — brand A/B FTS retrieval returns zero cross-brand chunks, vacuity-guarded.
+  - Rerank reorders + metadata boost — the perf blend surfaces the higher-engagement `historical_post`; β=0 control = pure rerank order.
+  - Recency — the fresher `market_intel` doc outranks the stale one via `δ·recencyDecay` (seed doc added).
+  - Ablation — all-off = slice-2 dense-only top chunk; S0/sparse/rerank/full each engage without crashing.
+  - Degrade — tei-rerank unreachable → recall-order results + `rerank.failed` ToolError, no crash.
+- [x] **Code gates green:** `dotnet build -warnaserror` (0 warn); `dotnet format --verify-no-changes`;
+  full `dotnet test` (33 unit + 56 integration, 2 live opt-in skipped); `Category=Isolation` 27/28
+  (dense **and** sparse arms); slice-2 regression parity; gitleaks (pre-commit) clean; **NO new migration**.
+- [x] **Confirmed-contracts cheat-sheet:** FTS `SqlQueryRaw<FtsHit>` projection + migration-free proof
+  ✅ live-confirmed; tei-rerank `/rerank` + `IChatClient` shapes documented (live verify pending network).
+- [ ] **PENDING — network:** Task 6 (`ChatQueryTransformer` + package + `chat` DI branch + Haiku-degrade
+  test); live `curl` of tei-rerank `/rerank`; opt-in `LiveRerank`/`LiveEmbeddings` runs; full
+  `docker compose` smoke with toggles flipped on (rerank top-k differs from dense order; `/health` Healthy).
 ```
