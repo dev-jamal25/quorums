@@ -49,8 +49,7 @@ public sealed class ExecuteRunJob
         }
 
         var now = DateTimeOffset.UtcNow;
-        run.Status = RunStatus.Running;
-        run.UpdatedAt = now;
+        run.TransitionTo(RunStatus.Running, now);
 
         // The brand's structured pillars (the Strategist's validation contract, R7) and the run's
         // target surface (the aspect-ratio stamp + Copywriting/Media constraints) are readable run
@@ -103,8 +102,9 @@ public sealed class ExecuteRunJob
         // A fatal node failure (Strategist/CD/selection exhaustion, global ceiling, Gemini fail) fails
         // the run; otherwise it reaches the human gate. The checkpoint is written either way so the
         // trace and errors are visible (DL-022/023).
-        run.Status = state.FatalError is not null ? RunStatus.Failed : RunStatus.AwaitingApproval;
-        run.UpdatedAt = now;
+        run.TransitionTo(
+            state.FatalError is not null ? RunStatus.Failed : RunStatus.AwaitingApproval,
+            now);
 
         await _db.SaveChangesAsync(cancellationToken);
         await handle.CompleteAsync(cancellationToken);

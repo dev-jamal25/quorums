@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Backend.Core.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -14,6 +15,8 @@ namespace Backend.Infrastructure.Persistence;
 /// </summary>
 public sealed class AppDbContext : DbContext
 {
+    private static readonly JsonSerializerOptions _engagementKeysJsonOptions = new(JsonSerializerDefaults.Web);
+
     public AppDbContext(DbContextOptions<AppDbContext> options)
         : base(options)
     {
@@ -37,6 +40,8 @@ public sealed class AppDbContext : DbContext
 
     public DbSet<ApprovalAction> ApprovalActions => Set<ApprovalAction>();
 
+    public DbSet<PublishRecord> PublishRecords => Set<PublishRecord>();
+
     public DbSet<BrandMetaConnection> BrandMetaConnections => Set<BrandMetaConnection>();
 
     public DbSet<EvalRecord> EvalRecords => Set<EvalRecord>();
@@ -48,7 +53,21 @@ public sealed class AppDbContext : DbContext
         // Enums persist as text, not magic ints, so the database stays self-describing.
         modelBuilder.Entity<AgentRun>().Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
         modelBuilder.Entity<ContentItem>().Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
-        modelBuilder.Entity<ApprovalAction>().Property(e => e.Decision).HasConversion<string>().HasMaxLength(16);
+        modelBuilder.Entity<ApprovalAction>().Property(e => e.Action).HasConversion<string>().HasMaxLength(32);
+
+        // The publish-outcome audit row (DL-040). Status is text; the engagement-poll handles are a
+        // small value object serialized to a jsonb column (same idiom as KnowledgeDoc.Metadata).
+        // ContentItemId is indexed for the pre-publish idempotency guard (DL-039).
+        modelBuilder.Entity<PublishRecord>(entity =>
+        {
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.EngagementKeys)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, _engagementKeysJsonOptions),
+                    v => JsonSerializer.Deserialize<EngagementKeys>(v, _engagementKeysJsonOptions)!)
+                .HasColumnType("jsonb");
+            entity.HasIndex(e => e.ContentItemId);
+        });
 
         // RAG schema (DL-016, DL-026). The pgvector extension is created by the migration;
         // the generated tsvector column + HNSW/GIN indexes are added via raw migrationBuilder.Sql.

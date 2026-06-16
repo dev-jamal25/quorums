@@ -191,15 +191,14 @@ public sealed class RunsController : ControllerBase
             Id = Guid.NewGuid(),
             BrandId = brandId,
             AgentRunId = id,
-            Decision = isApprove ? ApprovalDecision.Approved : ApprovalDecision.Rejected,
-            DecidedBy = "human",
-            DecidedAt = now,
+            Action = isApprove ? ApprovalActionType.Approve : ApprovalActionType.Reject,
+            Actor = "human",
+            OccurredAt = now,
         });
 
         if (isApprove)
         {
-            run.Status = RunStatus.Publishing;
-            run.UpdatedAt = now;
+            run.TransitionTo(RunStatus.Publishing, now);
             await _db.SaveChangesAsync(cancellationToken);
             await handle.CompleteAsync(cancellationToken);
 
@@ -207,8 +206,7 @@ public sealed class RunsController : ControllerBase
         }
         else
         {
-            run.Status = RunStatus.Rejected;
-            run.UpdatedAt = now;
+            run.TransitionTo(RunStatus.Rejected, now);
             await _db.SaveChangesAsync(cancellationToken);
             await handle.CompleteAsync(cancellationToken);
         }

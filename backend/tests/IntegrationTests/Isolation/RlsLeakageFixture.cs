@@ -156,6 +156,16 @@ public sealed class RlsLeakageFixture : IAsyncLifetime
             new AgentRun { Id = Guid.NewGuid(), BrandId = BrandA, Status = RunStatus.Queued, CreatedAt = now, UpdatedAt = now },
             new AgentRun { Id = Guid.NewGuid(), BrandId = BrandB, Status = RunStatus.Queued, CreatedAt = now, UpdatedAt = now });
 
+        // Phase-6 audit tables ride the same RLS policy: one ApprovalAction + one PublishRecord per
+        // brand, so the leakage test proves zero cross-brand visibility on both (DL-040).
+        seed.ApprovalActions.AddRange(
+            new ApprovalAction { Id = Guid.NewGuid(), BrandId = BrandA, AgentRunId = Guid.NewGuid(), Action = ApprovalActionType.Approve, Actor = "human", OccurredAt = now },
+            new ApprovalAction { Id = Guid.NewGuid(), BrandId = BrandB, AgentRunId = Guid.NewGuid(), Action = ApprovalActionType.Reject, Actor = "human", OccurredAt = now });
+
+        seed.PublishRecords.AddRange(
+            new PublishRecord { Id = Guid.NewGuid(), BrandId = BrandA, AgentRunId = Guid.NewGuid(), ContentItemId = Guid.NewGuid(), Status = PublishStatus.Published, ExternalRef = "mock://meta/a", AttemptCount = 1, OccurredAt = now, EngagementKeys = new EngagementKeys("media-a", null) },
+            new PublishRecord { Id = Guid.NewGuid(), BrandId = BrandB, AgentRunId = Guid.NewGuid(), ContentItemId = Guid.NewGuid(), Status = PublishStatus.Published, ExternalRef = "mock://meta/b", AttemptCount = 1, OccurredAt = now, EngagementKeys = new EngagementKeys("media-b", null) });
+
         await seed.SaveChangesAsync();
     }
 }

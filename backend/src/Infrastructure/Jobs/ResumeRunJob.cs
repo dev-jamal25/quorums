@@ -60,8 +60,7 @@ public sealed class ResumeRunJob
 
         checkpoint.StateJson = JsonSerializer.Serialize(state, RunStateJsonOptions.Options);
 
-        run.Status = RunStatus.Done;
-        run.UpdatedAt = now;
+        run.TransitionTo(RunStatus.Done, now);
 
         await _db.SaveChangesAsync(cancellationToken);
         await handle.CompleteAsync(cancellationToken);

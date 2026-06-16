@@ -76,16 +76,16 @@ public sealed class DurabilityFixture : IAsyncLifetime
         // mirroring a privileged controller path.
         await using var db = CreateDbContext(SuperuserConnectionString);
         var run = await db.AgentRuns.FirstAsync(r => r.Id == runId);
-        run.Status = RunStatus.Publishing;
-        run.UpdatedAt = DateTimeOffset.UtcNow;
+        var now = DateTimeOffset.UtcNow;
+        run.TransitionTo(RunStatus.Publishing, now);
         db.ApprovalActions.Add(new ApprovalAction
         {
             Id = Guid.NewGuid(),
             BrandId = brandId,
             AgentRunId = runId,
-            Decision = ApprovalDecision.Approved,
-            DecidedBy = "test",
-            DecidedAt = DateTimeOffset.UtcNow,
+            Action = ApprovalActionType.Approve,
+            Actor = "test",
+            OccurredAt = now,
         });
         await db.SaveChangesAsync();
     }
