@@ -1,3 +1,4 @@
+using Backend.Core.Domain;
 using Backend.Core.Orchestration;
 using Backend.Core.Storage;
 using Backend.Infrastructure.Orchestration.Maf;
@@ -54,7 +55,7 @@ public sealed class MafOrchestratorIdempotencyTests
 
         Assert.Equal(GraphPhase.Done, p1.Phase);
         Assert.StartsWith("mock://meta/", p1.Publish!.ExternalRef!);
-        Assert.Equal("published", p1.Publish.Status);
+        Assert.Equal(PublishStatus.Published, p1.Publish.Status);
         Assert.Equal(p1.Publish.ExternalRef, p2.Publish!.ExternalRef); // deterministic ref (DL-022)
         Assert.Single(meta.PublishedRefs.Distinct());                  // no second distinct post
     }

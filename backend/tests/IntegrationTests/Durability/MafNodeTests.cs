@@ -1,4 +1,5 @@
 using Backend.Core.Common;
+using Backend.Core.Domain;
 using Backend.Core.Orchestration;
 using Backend.Core.Orchestration.Contracts;
 using Backend.Core.Storage;
@@ -210,7 +211,7 @@ public sealed class MafNodeTests
 
         Assert.Equal(GraphPhase.Done, result.Phase);
         Assert.StartsWith("mock://meta/", result.Publish!.ExternalRef!);
-        Assert.Equal("published", result.Publish.Status);
+        Assert.Equal(PublishStatus.Published, result.Publish.Status);
         Assert.Contains(result.Trace.Spans, s => s.Node == "publishing" && s.Tool == "meta.publish" && s.Status == "ok");
     }
 

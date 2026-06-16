@@ -54,7 +54,7 @@ public sealed class MafResumeSeamTests : IClassFixture<DurabilityFixture>
         Assert.NotNull(final);
         Assert.Equal(GraphPhase.Done, final!.Phase);
         Assert.StartsWith("mock://meta/", final.Publish!.ExternalRef!);
-        Assert.Equal("published", final.Publish.Status);
+        Assert.Equal(PublishStatus.Published, final.Publish.Status);
         Assert.Empty(final.Errors);
 
         // One continuous trace across the ExecuteRun → ResumeRun seam.

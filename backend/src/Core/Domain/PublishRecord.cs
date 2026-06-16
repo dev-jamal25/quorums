@@ -18,6 +18,14 @@ public sealed class PublishRecord : IBrandScoped
     /// <summary>The idempotency key the pre-publish guard reads (DL-022, DL-039).</summary>
     public Guid ContentItemId { get; set; }
 
+    /// <summary>
+    /// The Meta media-container id, persisted immediately after create and BEFORE publish (DL-039).
+    /// Its presence with a null <see cref="ExternalRef"/> means "container created, publish not yet
+    /// recorded": re-entry re-publishes the same container (Meta dedups) instead of creating a second
+    /// one. Null until the container is created.
+    /// </summary>
+    public string? CreationId { get; set; }
+
     public PublishStatus Status { get; set; }
 
     /// <summary>The published media id; set when <see cref="Status"/> is <see cref="PublishStatus.Published"/>.</summary>

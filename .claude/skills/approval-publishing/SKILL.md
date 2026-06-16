@@ -58,12 +58,12 @@ Full request/response DTOs, and the **server-computed available-actions list** (
 
 ## Publishing path — IMetaIntegration (DL-038, DL-039)
 
-- The real publish is **two-step plus a poll**: create media container → poll until processed → publish container → record `externalRef`. It is **NOT naturally idempotent.**
-- **Pre-publish idempotency guard:** before the publish-container step, check whether `contentItemId` already has a recorded published media id; if so, skip and return the existing `externalRef`.
-- `IMetaIntegration` returns a **typed** `PublishResult` whose `status` is one of `Published`, `TransientFailure`, `TerminalFailure` — classify from the contract, never by exception-sniffing.
+- The real publish is **two-step plus a poll** exposed as SEPARATE `IMetaIntegration` operations — `CreateContainerAsync` (→ creationId) → `PollContainerAsync` → `PublishContainerAsync` (creationId → media id). It is **NOT naturally idempotent.**
+- **Robust creation-id idempotency guard (keyed on `contentItemId`, source of truth = the persisted `PublishRecord`):** persist the container **`CreationId` immediately after create, BEFORE publish**, then key re-entry on persisted state — (a) no record → create, persist `CreationId`, poll, publish, finalize (`ExternalRef` + `Status=Published`); (b) record with `CreationId` and no `ExternalRef` → do NOT re-create — re-publish the same container (Meta dedups an already-published container) and finalize; (c) record finalized → skip, return the existing `ExternalRef`. A crash in the create→persist-`CreationId` window leaves only an orphan unpublished container (harmless), never a double post. (The weaker "check for an existing `ExternalRef`, skip if present" guard does NOT close the crash-after-publish-before-record window — a retry finds no record and re-publishes.)
+- The step results are **typed**: `PublishContainerAsync` returns a `PublishResult` whose `status` is one of `Published`, `TransientFailure`, `TerminalFailure`, and create/poll return classified failures — classify from the contract, never by exception-sniffing.
   - **Transient** (network timeout, 5xx, rate-limit-with-retry-after, container still processing) → Hangfire automatic retry, **3 attempts, exponential backoff**, each guarded by the idempotency check.
   - **Terminal** (auth/token revoked, content policy-rejected, invalid media, rate-limit exhausted, account restricted) → **0 retries** → `ToolError` → `AgentRun` becomes `Failed`, reason surfaced to the reviewer.
-- `MockMetaIntegration` must model the two-step shape **and the crash-between-steps case**, and inject both failure classes deterministically for CI. A single-call mock is trivially idempotent and hides the real double-post bug. Full contract and failure taxonomy in `references/meta-integration.md`.
+- `MockMetaIntegration` must model the separate create/poll/publish steps with a fresh container id per create (so a crashed create leaves a real orphan), make a re-publish of an already-published container **deduped to the same media id**, expose **injectable crash points in BOTH durability windows** (after-create-before-persist-`CreationId` and after-publish-before-record), and inject both failure classes deterministically for CI. A single-call mock is trivially idempotent and hides the real double-post bug. Full contract and failure taxonomy in `references/meta-integration.md`.
 
 ## Audit (DL-040)
 
@@ -82,7 +82,7 @@ Mocks **honor the real contract shape**; they are not minimal passthroughs. This
 
 ## Critical gotchas
 
-1. **Two-step publish double-post.** A crash between `publish container` and recording the result, then a Hangfire retry, re-runs create+publish and posts twice. The pre-publish guard is mandatory, and the mock MUST model the crash — otherwise the idempotency test passes while the real path is broken (DL-039).
+1. **Two-step publish double-post.** A crash between `publish container` and recording the result, then a Hangfire retry, re-runs create+publish and posts twice. Persisting only the final `ExternalRef` does NOT prevent this (the crash leaves no record, so the retry re-publishes). The fix is to persist the `CreationId` BEFORE publish (committed in its own unit) and re-publish that same container on retry (Meta dedups). The mock MUST model both crash windows and the re-publish dedup — otherwise the idempotency test passes while the real path is broken (DL-039).
 2. **Edit on `RunState.Draft` is wrong.** The edit is an approval-decision overlay on `ApprovalAction`; `RunState.Draft` must stay byte-identical to the AI output (DL-035/020).
 3. **Audit behind the Langfuse gate is wrong.** If approval/publish records are written through the trace, turning Langfuse off silently drops the audit. Audit writes are durable Postgres rows, gated by nothing (DL-040).
 4. **Renumbering the `RunStatus` enum is wrong.** `Scheduled` and `Cancelled` are **appended** members; never renumber existing values — they are persisted (see `references/state-machine.md`).
@@ -92,7 +92,7 @@ Mocks **honor the real contract shape**; they are not minimal passthroughs. This
 
 State the method, run it, read the output. Done = every applicable box green.
 
-1. **Idempotency:** force a crash between publish and result-record, retry, and confirm exactly one published media; the mock models both steps plus the crash (not a one-call fake).
+1. **Idempotency:** force a crash after publish but before the result-record (and separately after create but before the `CreationId` persist), retry, and confirm exactly one published media — the retry recovers via the committed `CreationId` + re-publish dedup; the mock models the separate steps plus both crash windows (not a one-call fake).
 2. **Edit boundary:** an over-limit edit (caption over 2200 chars or over 30 hashtags) returns 400 at `/approval` and never reaches publish; `RunState.Draft` is unchanged after an approved-with-edit run.
 3. **Regenerate ceiling:** regenerate is absent from available-actions once the regen ceiling is hit; only approve/reject remain.
 4. **Cancel scope:** `/cancel` is valid only in `Scheduled`; cancel-before-fire deletes the Hangfire job, run becomes `Cancelled`, no publish.

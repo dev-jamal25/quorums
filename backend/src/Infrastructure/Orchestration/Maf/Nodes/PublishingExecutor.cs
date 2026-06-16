@@ -1,3 +1,4 @@
+using Backend.Core.Domain;
 using Backend.Core.Integrations;
 using Backend.Core.Orchestration;
 using Backend.Core.Orchestration.Contracts;
@@ -11,6 +12,11 @@ namespace Backend.Infrastructure.Orchestration.Maf.Nodes;
 /// resume-segment graph. The publish is keyed by the run id, so a retried <c>ResumeRun</c>
 /// re-uses the same external reference instead of creating a second post (DL-022). A publish
 /// failure degrades to a structured <see cref="ToolError"/> rather than throwing into the graph.
+/// <para><b>Transitional (Slice 2):</b> this node composes the two-step <see cref="IMetaIntegration"/>
+/// inline with a placeholder access token and NO <c>PublishRecord</c> persistence — idempotency here
+/// rests solely on the mock's stable, content-keyed external ref. Slice 4 rewires it to delegate to
+/// <c>PublishCoordinator</c> (durable CreationId idempotency, the edit overlay, publish-time
+/// re-check, the Vault-decrypted token, and ToolError/Failed mapping).</para>
 /// </summary>
 public sealed class PublishingExecutor : Executor<RunState, RunState>
 {
@@ -37,10 +43,12 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
             : $"{state.Caption.Hook}\n\n{state.Caption.Body}";
 
         var request = new PublishRequest(
-            BrandId: state.BrandId,
             ContentItemId: state.RunId,
+            Surface: MapSurface(state.TargetSurface),
+            MediaUrl: state.Media?.StorageKey ?? string.Empty,
             Caption: caption,
-            MediaStorageKey: state.Media?.StorageKey);
+            Hashtags: state.Caption?.Hashtags ?? [],
+            AccessToken: string.Empty); // Slice 4 supplies the Vault-decrypted per-brand token.
 
         PublishResult result;
         var errors = state.Errors;
@@ -50,8 +58,9 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
         string? error = null;
         try
         {
-            result = await _meta.PublishAsync(request, cancellationToken).ConfigureAwait(false);
-            status = "ok";
+            result = await PublishTwoStepAsync(request, cancellationToken).ConfigureAwait(false);
+            status = result.Status == PublishStatus.Published ? "ok" : "error";
+            error = result.Error;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -59,7 +68,7 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
                 Code: "meta.publish_failed",
                 Message: ex.Message,
                 Retryable: true)];
-            result = new PublishResult(ExternalRef: null, Status: "failed", Error: ex.Message);
+            result = new PublishResult(PublishStatus.TerminalFailure, ExternalRef: null, Error: ex.Message, EngagementKeys: null);
             status = "error";
             error = ex.Message;
         }
@@ -77,4 +86,30 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
             Trace = trace,
         };
     }
+
+    // Transitional inline compose of the two-step publish (create -> poll -> publish). No
+    // PublishRecord persistence; Slice 4 replaces this with PublishCoordinator delegation.
+    private async Task<PublishResult> PublishTwoStepAsync(PublishRequest request, CancellationToken cancellationToken)
+    {
+        var created = await _meta.CreateContainerAsync(request, cancellationToken).ConfigureAwait(false);
+        if (created.CreationId is not { } creationId)
+        {
+            return new PublishResult(created.Failure ?? PublishStatus.TerminalFailure, null, created.Error, null);
+        }
+
+        var pollResult = await _meta.PollContainerAsync(creationId, cancellationToken).ConfigureAwait(false);
+        if (!pollResult.Processed)
+        {
+            return new PublishResult(pollResult.Failure ?? PublishStatus.TransientFailure, null, pollResult.Error, null);
+        }
+
+        return await _meta.PublishContainerAsync(creationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static PostSurface MapSurface(string targetSurface) => targetSurface switch
+    {
+        "instagram_reel" => PostSurface.Reel,
+        "instagram_story" => PostSurface.Story,
+        _ => PostSurface.FeedImage,
+    };
 }

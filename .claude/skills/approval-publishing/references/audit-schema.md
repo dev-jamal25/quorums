@@ -38,15 +38,16 @@ public record PublishRecord(
     Guid RunId,
     Guid BrandId,                        // RLS-scoped
     Guid ContentItemId,                  // idempotency key (the guard reads this)
+    string? CreationId,                  // Meta container id, persisted BEFORE publish (DL-039 robust guard); null until created
     PublishStatus Status,
-    string? ExternalRef,                 // published media id
+    string? ExternalRef,                 // published media id; set at finalize
     int AttemptCount,
     DateTimeOffset OccurredAt,
     EngagementKeys? EngagementKeys       // the Analytics agent reads these later (DL-038, Phase 7)
 );
 ```
 
-- This row is the **source of truth** for the pre-publish idempotency guard ("already published?").
+- This row is the **source of truth** for the robust creation-id idempotency guard (see `meta-integration.md`): `CreationId` is persisted (committed) immediately after create and BEFORE publish, so a crash-and-retry re-publishes the same container (Meta dedups) rather than creating a second post. `ExternalRef != null` marks the record finalized. A `CreationId` with a null `ExternalRef` is an in-flight publish to recover, not a finished one.
 
 ## RLS
 
