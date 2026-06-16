@@ -151,6 +151,30 @@ public sealed class DurabilityFixture : IAsyncLifetime
         return (db, new BrandScope(db, brandContext));
     }
 
+    /// <summary>The brand-scoped trio a controller is constructed from (RLS-subject role, bound brand).</summary>
+    public (AppDbContext Db, IBrandScope Scope, IBrandContext BrandContext) CreateGateDeps(Guid brandId)
+    {
+        var db = CreateAppDbContext();
+        var brandContext = new BrandContext();
+        brandContext.Bind(brandId);
+        return (db, new BrandScope(db, brandContext), brandContext);
+    }
+
+    /// <summary>Seeds a run checkpoint (superuser, bypassing RLS) so a gate test can assert the draft is untouched.</summary>
+    public async Task SeedCheckpointAsync(Guid runId, Guid brandId, string stateJson)
+    {
+        await using var db = CreateDbContext(SuperuserConnectionString);
+        db.RunCheckpoints.Add(new RunCheckpoint
+        {
+            Id = Guid.NewGuid(),
+            BrandId = brandId,
+            AgentRunId = runId,
+            StateJson = stateJson,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
+
     private AppDbContext CreateAppDbContext() => CreateDbContext(AppUserConnectionString);
 
     private static AppDbContext CreateDbContext(string connectionString)

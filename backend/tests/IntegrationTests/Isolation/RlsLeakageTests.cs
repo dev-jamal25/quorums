@@ -134,6 +134,30 @@ public sealed class RlsLeakageTests : IClassFixture<RlsLeakageFixture>
     }
 
     [Fact]
+    public async Task ApprovalAction_write_cannot_escape_the_brand_scope()
+    {
+        // The gate's ApprovalAction writes (Slice 3) ride the same WITH CHECK policy: under Brand A's
+        // scope a row carrying Brand B's id is rejected.
+        var (db, scope) = _fixture.CreateBrandScopedContext(_fixture.BrandA);
+        await using (db)
+        {
+            await using var handle = await scope.BeginAsync();
+
+            db.ApprovalActions.Add(new ApprovalAction
+            {
+                Id = Guid.NewGuid(),
+                BrandId = _fixture.BrandB,          // foreign brand — must not be writable from A's scope
+                AgentRunId = Guid.NewGuid(),
+                Action = ApprovalActionType.Approve,
+                Actor = "human",
+                OccurredAt = DateTimeOffset.UtcNow,
+            });
+
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        }
+    }
+
+    [Fact]
     public async Task Transaction_local_binding_does_not_bleed_across_pooled_connections()
     {
         // Brand A unit of work: sees only A.

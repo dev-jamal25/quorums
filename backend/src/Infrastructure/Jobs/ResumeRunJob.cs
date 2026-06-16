@@ -39,7 +39,14 @@ public sealed class ResumeRunJob
             return;
         }
 
-        if (run.Status != RunStatus.Publishing)
+        // The scheduled delayed job fires with the run still Scheduled — advance it to Publishing
+        // before publishing (DL-037). Approve-now arrives already Publishing. Any other status
+        // (e.g. Cancelled, already Done) no-ops. The full resumable-state pre-check is Slice 4.
+        if (run.Status == RunStatus.Scheduled)
+        {
+            run.TransitionTo(RunStatus.Publishing, DateTimeOffset.UtcNow);
+        }
+        else if (run.Status != RunStatus.Publishing)
         {
             return;
         }
