@@ -1,3 +1,4 @@
+using System.Net;
 using Anthropic.SDK;
 using Backend.Core.Generation;
 using Backend.Core.Generation.Cost;
@@ -14,6 +15,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Extensions.Http;
+using Polly.Retry;
+using Polly.Timeout;
 
 namespace Backend.Infrastructure.Generation;
 
@@ -51,11 +56,23 @@ public static class GenerationServiceCollectionExtensions
         services.AddSingleton(sp =>
             sp.GetRequiredService<IOptions<CostPricesOptions>>().Value.ToCostPrices());
 
-        // Media seam (DL-001): mock = fixed image for CI/compose; live throws until the real Gemini step (P3).
+        // Media seam (DL-001): mock = fixed image for CI/compose; live = the real Gemini image client
+        // (typed HttpClient + transient/429 retry). CI runs mock only, so no live call is ever made.
         var geminiMode = (configuration["Gemini:Mode"] ?? "mock").Trim().ToLowerInvariant();
         if (geminiMode == "live")
         {
-            services.AddSingleton<IMediaGenerationTool, LiveGeminiMediaTool>();
+            var gemini = configuration.GetSection(GeminiOptions.SectionName).Get<GeminiOptions>() ?? new GeminiOptions();
+            services
+                .AddHttpClient<IMediaGenerationTool, LiveGeminiMediaTool>((sp, client) =>
+                {
+                    var options = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
+                    client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+                    client.DefaultRequestHeaders.Add("x-goog-api-key", options.ApiKey);
+                    // Polly owns per-attempt timeout + retry timing; disable the ambient client timeout.
+                    client.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+                })
+                .AddPolicyHandler(GeminiRetryPolicy(gemini.MaxRetries))        // outer: transient + 429 retry
+                .AddPolicyHandler(GeminiTimeoutPolicy(gemini.TimeoutSeconds));  // inner: per-attempt timeout
         }
         else
         {
@@ -78,4 +95,40 @@ public static class GenerationServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>Honor a server <c>Retry-After</c> no longer than this; else exponential backoff.</summary>
+    private static readonly TimeSpan _maxHonoredRetryAfter = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Bounded retry for the Gemini media client: transient HTTP (5xx/408/network), a per-attempt
+    /// timeout, and <b>429 RESOURCE_EXHAUSTED</b> (the free-tier per-minute rate limit) — all
+    /// retryable. Other 4xx (400/401/403/404) are <b>not</b> retried (fail fast). On exhaustion the
+    /// non-success status surfaces, the tool throws, and the Media node maps it to a structured
+    /// <c>ToolError</c> (retry-then-fail-item, DL-023).
+    /// </summary>
+    private static AsyncRetryPolicy<HttpResponseMessage> GeminiRetryPolicy(int maxRetries) =>
+        HttpPolicyExtensions
+            .HandleTransientHttpError()
+            .OrResult(response => response.StatusCode == HttpStatusCode.TooManyRequests)
+            .Or<TimeoutRejectedException>()
+            .WaitAndRetryAsync(
+                maxRetries,
+                sleepDurationProvider: (attempt, outcome, _) => RetryDelay(attempt, outcome),
+                onRetryAsync: (_, _, _, _) => Task.CompletedTask);
+
+    private static TimeSpan RetryDelay(int attempt, DelegateResult<HttpResponseMessage> outcome)
+    {
+        var retryAfter = outcome.Result?.Headers.RetryAfter;
+        var honored = retryAfter?.Delta
+            ?? (retryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
+        if (honored is { } delay && delay > TimeSpan.Zero)
+        {
+            return delay < _maxHonoredRetryAfter ? delay : _maxHonoredRetryAfter;
+        }
+
+        return TimeSpan.FromSeconds(Math.Pow(2, attempt));
+    }
+
+    private static AsyncTimeoutPolicy<HttpResponseMessage> GeminiTimeoutPolicy(int seconds) =>
+        Policy.TimeoutAsync<HttpResponseMessage>(TimeSpan.FromSeconds(seconds));
 }
