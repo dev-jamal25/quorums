@@ -15,9 +15,11 @@ consumed by Claude Code build sessions — most importantly the build that
 
 Every choice here is frozen in `Agent_Orchestration_Design.md`
 (**DL-017–023** for topology/state/failure/cost; **DL-027–030** for the
-decisions this skill encodes). That document holds the rationale — point to it,
-do not restate or reopen it. Frozen artifacts are append-only: supersede with a
-new DL entry, never edit one in place.
+decisions this skill encodes; **DL-034** for this session's frozen Phase-5
+implementation resolutions — R1–R8 in `references/implementation-resolutions.md`).
+That document holds the rationale — point to it, do not restate or reopen it.
+Frozen artifacts are append-only: supersede with a new DL entry, never edit one
+in place.
 
 ## Scope boundary — read this before writing anything
 
@@ -217,3 +219,8 @@ these decisions itself**, and the result passes the seven tests above.
   provisioning, prices-as-config, the degrade path, the per-call estimate table.
 - `references/platform-constraints.md` — the constraint set, inform+validate,
   per-constraint remedy, the publish-time re-check.
+- `references/implementation-resolutions.md` — the frozen Phase-5 implementation
+  resolutions (**DL-034**, R1–R8): budget-gate placement + the asymmetric caption-only
+  join, budget single-writer, the structured-output seam + fallback hierarchy, the
+  load-bearing field validators, grounding honesty, the `pillar` contract + data, and
+  empty-RAG-non-fatal + the deterministic `aspectRatio` stamp.

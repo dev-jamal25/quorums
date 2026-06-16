@@ -30,6 +30,12 @@ public sealed class CreateBrandRequest
     /// <summary>Description of the brand's imagery style.</summary>
     public string ImageryStyle { get; init; } = default!;
 
+    /// <summary>
+    /// Structured content pillars — the validation contract the Content Strategist's
+    /// <c>pillar</c> is checked against at receipt (DL-026, DL-034 R7).
+    /// </summary>
+    public IReadOnlyList<string> ContentPillars { get; init; } = [];
+
     /// <summary>Target audience segments.</summary>
     public IReadOnlyList<string> AudienceSegments { get; init; } = [];
 

@@ -22,6 +22,14 @@ public sealed record KnowledgeDocSpec(
 /// </summary>
 public static class CoffeeRoasterCorpus
 {
+    /// <summary>
+    /// The coffee-roaster demo's structured content pillars (DL-034 R7). These are the
+    /// validation contract the Content Strategist's <c>pillar</c> is checked against; the demo
+    /// brand is onboarded with these on its <c>BrandProfile.ContentPillars</c>. The brand_playbook
+    /// prose above stays generation grounding — the list is the contract, not a replacement.
+    /// </summary>
+    public static IReadOnlyList<string> ContentPillars { get; } = ["Origin", "Craft", "Ritual"];
+
     /// <summary>The relevance proof's target doc title (a whole-unit product → chunk index 0).</summary>
     public const string RelevanceProductTitle = "Ethiopia Yirgacheffe Single Origin";
 

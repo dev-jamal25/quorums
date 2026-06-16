@@ -24,6 +24,7 @@ public sealed class BrandOnboardingTests : IClassFixture<OnboardingFixture>
         VoiceDont: ["no hype words"],
         ColorHexes: ["#1A2B3C", "#FFFFFF"],
         ImageryStyle: "Bright, minimal, natural light.",
+        ContentPillars: ["Origin", "Craft", "Ritual"],
         AudienceSegments: ["urban professionals"],
         AudiencePainPoints: ["bad office coffee"],
         ProductContext: "Single-origin beans sold by subscription.");
@@ -60,6 +61,7 @@ public sealed class BrandOnboardingTests : IClassFixture<OnboardingFixture>
             Assert.Equal("Specialty coffee for people who hate fuss.", profile.Positioning);
             Assert.Equal(["warm", "direct"], profile.ToneDescriptors);
             Assert.Equal(["#1A2B3C", "#FFFFFF"], profile.ColorHexes);
+            Assert.Equal(["Origin", "Craft", "Ritual"], profile.ContentPillars);
             Assert.Equal("Single-origin beans sold by subscription.", profile.ProductContext);
         }
     }

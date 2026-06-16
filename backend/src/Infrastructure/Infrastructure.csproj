@@ -19,6 +19,9 @@
     <PackageReference Include="Hangfire.AspNetCore" />
     <PackageReference Include="Hangfire.PostgreSql" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" />
+    <!-- Gemini media client resilience (P3): transient + 429 retry with backoff. -->
+    <PackageReference Include="Polly.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Http.Polly" />
     <!-- S0 query-transform (Task 6): Claude via Microsoft.Extensions.AI IChatClient (item 6).
          Referenced now so the restore fetches them; the ChatQueryTransformer code lands with Task 6. -->
     <PackageReference Include="Microsoft.Extensions.AI" />

@@ -24,5 +24,6 @@ public interface ITrace
         DateTimeOffset startedAt,
         DateTimeOffset endedAt,
         string? errorMessage,
+        string? detail = null,
         CancellationToken cancellationToken = default);
 }

@@ -3,6 +3,7 @@
 // config). The Hangfire server, job registration (ExecuteRunJob/ResumeRunJob), and
 // the shared Infrastructure DI wiring are added in the build-order slices.
 using Backend.Infrastructure.Configuration;
+using Backend.Infrastructure.Generation;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Knowledge;
@@ -23,6 +24,7 @@ builder.Services.AddHangfireWorker();
 builder.Services.AddStorage();
 builder.Services.AddMetaIntegration();
 builder.Services.AddTracing(builder.Configuration);
+builder.Services.AddGeneration(builder.Configuration);
 builder.Services.AddOrchestration();
 
 var host = builder.Build();

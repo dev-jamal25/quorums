@@ -21,6 +21,7 @@ public sealed class CreateBrandRequestValidatorTests
         VoiceDont = ["no hype words"],
         ColorHexes = ["#1A2B3C", "#FFF"],
         ImageryStyle = "Bright, minimal, natural light.",
+        ContentPillars = ["Origin", "Craft", "Ritual"],
         AudienceSegments = ["urban professionals"],
         AudiencePainPoints = ["bad office coffee"],
         ProductContext = "Single-origin beans sold by subscription.",
@@ -97,6 +98,22 @@ public sealed class CreateBrandRequestValidatorTests
     }
 
     [Fact]
+    public void Empty_content_pillars_is_rejected()
+    {
+        var result = _validator.Validate(CloneWith(ValidRequest(), contentPillars: []));
+
+        Assert.True(HasErrorFor(result, nameof(CreateBrandRequest.ContentPillars)));
+    }
+
+    [Fact]
+    public void Blank_content_pillar_element_is_rejected()
+    {
+        var result = _validator.Validate(CloneWith(ValidRequest(), contentPillars: ["Origin", "  "]));
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
     public void Empty_audience_segments_is_rejected()
     {
         var result = _validator.Validate(CloneWith(ValidRequest(), audienceSegments: []));
@@ -127,6 +144,7 @@ public sealed class CreateBrandRequestValidatorTests
         IReadOnlyList<string>? toneDescriptors = null,
         IReadOnlyList<string>? colorHexes = null,
         string? imageryStyle = null,
+        IReadOnlyList<string>? contentPillars = null,
         IReadOnlyList<string>? audienceSegments = null,
         IReadOnlyList<string>? audiencePainPoints = null,
         string? productContext = null) => new()
@@ -138,6 +156,7 @@ public sealed class CreateBrandRequestValidatorTests
             VoiceDont = source.VoiceDont,
             ColorHexes = colorHexes ?? source.ColorHexes,
             ImageryStyle = imageryStyle ?? source.ImageryStyle,
+            ContentPillars = contentPillars ?? source.ContentPillars,
             AudienceSegments = audienceSegments ?? source.AudienceSegments,
             AudiencePainPoints = audiencePainPoints ?? source.AudiencePainPoints,
             ProductContext = productContext ?? source.ProductContext,

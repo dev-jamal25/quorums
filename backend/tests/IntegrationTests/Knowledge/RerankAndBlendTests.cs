@@ -1,3 +1,4 @@
+using Backend.Core.Domain;
 using Backend.Core.Knowledge;
 using Backend.Infrastructure.Configuration.Options;
 using Xunit;
@@ -38,7 +39,7 @@ public sealed class RerankAndBlendTests
         {
             await using var handle = await scope.BeginAsync();
 
-            var result = await retrieval.Retrieve("a slow ritual brewing coffee", _fixture.BrandA, docType: "HistoricalPost", k: 2);
+            var result = await retrieval.Retrieve("a slow ritual brewing coffee", _fixture.BrandA, docType: DocType.HistoricalPost, k: 2);
 
             // "Pour Over Sunday" (eng 0.071) must outrank "Espresso Tutorial" (eng 0.052) on the perf blend.
             Assert.Equal(_fixture.PourOverSundayChunkId, result.Chunks[0].ChunkId);
@@ -60,7 +61,7 @@ public sealed class RerankAndBlendTests
         {
             await using var handle = await scope.BeginAsync();
 
-            var result = await retrieval.Retrieve("a slow ritual brewing coffee", _fixture.BrandA, docType: "HistoricalPost", k: 2);
+            var result = await retrieval.Retrieve("a slow ritual brewing coffee", _fixture.BrandA, docType: DocType.HistoricalPost, k: 2);
 
             Assert.Equal(2, result.Chunks.Count);   // both returned; with β=0 the perf term cannot reorder
         }

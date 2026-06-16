@@ -15,6 +15,7 @@ public sealed record BrandOnboardingCommand(
     IReadOnlyList<string> VoiceDont,
     IReadOnlyList<string> ColorHexes,
     string ImageryStyle,
+    IReadOnlyList<string> ContentPillars,
     IReadOnlyList<string> AudienceSegments,
     IReadOnlyList<string> AudiencePainPoints,
     string ProductContext);

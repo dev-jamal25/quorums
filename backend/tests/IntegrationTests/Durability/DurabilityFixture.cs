@@ -7,7 +7,6 @@ using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Multitenancy;
 using Backend.Infrastructure.Orchestration.Maf;
 using Backend.Infrastructure.Persistence;
-using Backend.Infrastructure.Tracing;
 using Backend.IntegrationTests.Support;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -91,15 +90,27 @@ public sealed class DurabilityFixture : IAsyncLifetime
         await db.SaveChangesAsync();
     }
 
-    public (AppDbContext Db, ExecuteRunJob Job) CreateExecuteRunJob(Guid brandId)
+    public (AppDbContext Db, ExecuteRunJob Job) CreateExecuteRunJob(
+        Guid brandId, GenerationAgentDeps? deps = null)
     {
         var db = CreateAppDbContext();
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new MafOrchestrator(
-            new InMemoryStorageService(), new MockMetaIntegration(), new LocalTraceRecorder());
+        var orchestrator = new MafOrchestrator(deps ?? TestGeneration.Deps(), new MockMetaIntegration());
         return (db, new ExecuteRunJob(db, scope, brandContext, orchestrator));
+    }
+
+    /// <summary>Reads the run's terminal status under the brand's RLS scope.</summary>
+    public async Task<RunStatus?> ReadRunStatusAsync(Guid runId, Guid brandId)
+    {
+        var (db, scope) = CreateReadContext(brandId);
+        await using (db)
+        {
+            await using var handle = await scope.BeginAsync();
+            var run = await db.AgentRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId);
+            return run?.Status;
+        }
     }
 
     public (AppDbContext Db, ResumeRunJob Job) CreateResumeRunJob(Guid brandId)
@@ -109,7 +120,7 @@ public sealed class DurabilityFixture : IAsyncLifetime
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
         var orchestrator = new MafOrchestrator(
-            new InMemoryStorageService(), new MockMetaIntegration(), new LocalTraceRecorder());
+            TestGeneration.Deps(), new MockMetaIntegration());
         return (db, new ResumeRunJob(db, scope, brandContext, orchestrator));
     }
 

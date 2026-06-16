@@ -1,3 +1,4 @@
+using Backend.Core.Domain;
 using Backend.Infrastructure.Configuration.Options;
 using Xunit;
 
@@ -25,7 +26,7 @@ public sealed class AblationToggleTests
         {
             await using var handle = await scope.BeginAsync();
 
-            var result = await retrieval.Retrieve(_fixture.BrandAProductQuery, _fixture.BrandA, "Product", 3);
+            var result = await retrieval.Retrieve(_fixture.BrandAProductQuery, _fixture.BrandA, DocType.Product, 3);
 
             Assert.True(result.Grounded);
             Assert.Equal(_fixture.BrandAProductChunkId, result.Chunks[0].ChunkId);  // identical to slice-2
@@ -52,7 +53,7 @@ public sealed class AblationToggleTests
         {
             await using var handle = await scope.BeginAsync();
 
-            var result = await retrieval.Retrieve(_fixture.BrandAProductQuery, _fixture.BrandA, "Product", 3);
+            var result = await retrieval.Retrieve(_fixture.BrandAProductQuery, _fixture.BrandA, DocType.Product, 3);
 
             Assert.NotEmpty(result.Chunks);   // a sane result set; no exception into the graph
             Assert.Null(result.Error);        // mocks never fail → no degrade ToolError

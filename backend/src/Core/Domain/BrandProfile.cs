@@ -36,6 +36,15 @@ public sealed class BrandProfile : IBrandScoped
     /// <summary>Free-form description of the brand's imagery style.</summary>
     public string ImageryStyle { get; set; } = default!;
 
+    // --- Content pillars --------------------------------------------------
+    /// <summary>
+    /// The brand's structured content pillars — the validation contract the Content
+    /// Strategist's <c>pillar</c> is checked against at receipt (DL-026, DL-034 R7). Set at
+    /// onboarding, brand-scoped under the same RLS policy. Distinct from the brand_playbook
+    /// prose, which remains generation grounding (the list is the contract, not a replacement).
+    /// </summary>
+    public List<string> ContentPillars { get; set; } = [];
+
     // --- Audience ---------------------------------------------------------
     /// <summary>Target audience segments.</summary>
     public List<string> AudienceSegments { get; set; } = [];
