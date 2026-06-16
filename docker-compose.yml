@@ -137,7 +137,11 @@ services:
     # DL-024: replaces Ollama. Listens on port 80; weights downloaded on first start.
     # Named volume persists the model cache so weights are not re-downloaded each run.
     # Generous start_period covers first-run weight download.
-    command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5"]
+    # --revision is PINNED: upstream `main` config.json churns (a "standardize for
+    # Transformers" change adds a duplicate `max_position_embeddings`) and TEI 1.6's
+    # strict parser rejects duplicate keys → "Failed to parse config.json" → exit(1).
+    # bf8779d… is the verified-clean NomicBert config. Do NOT drop the pin.
+    command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5", "--revision", "bf8779d6d6e2b2b40132bc9266cc056a342aa4ed"]
     ports:
       - "8090:80"
     volumes:
