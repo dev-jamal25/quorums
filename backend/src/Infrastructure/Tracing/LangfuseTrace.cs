@@ -38,9 +38,10 @@ public sealed partial class LangfuseTrace : ITrace
         DateTimeOffset startedAt,
         DateTimeOffset endedAt,
         string? errorMessage,
+        string? detail = null,
         CancellationToken cancellationToken = default)
     {
-        var refs = TraceAssembler.Append(current, node, tool, status, startedAt, endedAt, errorMessage);
+        var refs = TraceAssembler.Append(current, node, tool, status, startedAt, endedAt, errorMessage, detail);
         var span = refs.Spans[^1];
 
         try
@@ -64,7 +65,7 @@ public sealed partial class LangfuseTrace : ITrace
                             endTime = endedAt,
                             level = errorMessage is null ? "DEFAULT" : "ERROR",
                             statusMessage = errorMessage ?? status,
-                            metadata = new { runId, brandId, node, tool },
+                            metadata = new { runId, brandId, node, tool, detail },
                         },
                     },
                 },

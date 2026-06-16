@@ -66,7 +66,7 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
 
         var trace = await _trace.RecordAsync(
             state.Trace, state.RunId, state.BrandId, "publishing", "meta.publish",
-            status, startedAt, DateTimeOffset.UtcNow, error, cancellationToken)
+            status, startedAt, DateTimeOffset.UtcNow, error, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         return state with

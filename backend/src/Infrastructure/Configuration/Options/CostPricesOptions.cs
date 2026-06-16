@@ -29,6 +29,14 @@ public sealed class CostPricesOptions
     [Range(0.0000001, 1_000_000.0)]
     public decimal GeminiPerImage { get; init; }
 
+    /// <summary>
+    /// The global per-run dollar ceiling the Media gate enforces (DL-029). A grossly-exceeded
+    /// fork-time snapshot fails the run. Config-bound (seeded near
+    /// <c>BudgetEvaluation.WorstCaseCeilingUsd</c>); tests inject a tiny value to force a breach.
+    /// </summary>
+    [Range(0.0000001, 1_000_000.0)]
+    public decimal GlobalCeilingUsd { get; init; }
+
     public CostPrices ToCostPrices() => new(
         SonnetInputPerMTok,
         SonnetOutputPerMTok,

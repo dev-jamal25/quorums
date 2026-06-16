@@ -16,14 +16,15 @@ internal static class TraceAssembler
         string status,
         DateTimeOffset startedAt,
         DateTimeOffset endedAt,
-        string? error)
+        string? error,
+        string? detail = null)
     {
         var traceId = string.IsNullOrEmpty(current.TraceId)
             ? Guid.NewGuid().ToString("N")
             : current.TraceId;
 
         var spanId = Guid.NewGuid().ToString("N");
-        var span = new TraceSpan(spanId, node, tool, status, startedAt, endedAt, error);
+        var span = new TraceSpan(spanId, node, tool, status, startedAt, endedAt, error, detail);
 
         var spanIds = new List<string>(current.SpanIds ?? []) { spanId };
         var spans = new List<TraceSpan>(current.Spans ?? []) { span };

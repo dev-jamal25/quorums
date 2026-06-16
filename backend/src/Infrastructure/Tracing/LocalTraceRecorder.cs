@@ -20,7 +20,8 @@ public sealed class LocalTraceRecorder : ITrace
         DateTimeOffset startedAt,
         DateTimeOffset endedAt,
         string? errorMessage,
+        string? detail = null,
         CancellationToken cancellationToken = default) =>
         Task.FromResult(
-            TraceAssembler.Append(current, node, tool, status, startedAt, endedAt, errorMessage));
+            TraceAssembler.Append(current, node, tool, status, startedAt, endedAt, errorMessage, detail));
 }

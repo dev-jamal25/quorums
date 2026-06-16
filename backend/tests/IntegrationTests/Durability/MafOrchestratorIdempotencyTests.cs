@@ -1,7 +1,6 @@
 using Backend.Core.Orchestration;
 using Backend.Core.Storage;
 using Backend.Infrastructure.Orchestration.Maf;
-using Backend.Infrastructure.Tracing;
 using Backend.IntegrationTests.Support;
 using Xunit;
 
@@ -15,30 +14,15 @@ namespace Backend.IntegrationTests.Durability;
 [Trait("Category", "Durability")]
 public sealed class MafOrchestratorIdempotencyTests
 {
-    private static RunState Seed(Guid runId, Guid brandId) => new(
-        RunId: runId,
-        BrandId: brandId,
-        Phase: GraphPhase.Strategy,
-        Strategy: null,
-        Creative: null,
-        Caption: null,
-        Media: null,
-        Draft: null,
-        Approval: null,
-        Publish: null,
-        Budget: new Budget(TokenBudget: 10_000, TokensSpent: 0, MediaBudget: 1.00m, MediaSpent: 0m),
-        Errors: [],
-        Trace: new TraceRefs(TraceId: string.Empty, SpanIds: [], Spans: []));
-
     [Fact]
     public async Task Generation_rerun_writes_single_asset_then_publish_rerun_keeps_one_ref()
     {
         var storage = new InMemoryStorageService();
         var meta = new RecordingMetaIntegration();
-        var orchestrator = new MafOrchestrator(storage, meta, new LocalTraceRecorder());
+        var orchestrator = new MafOrchestrator(TestGeneration.Deps(storage: storage), meta);
         var runId = Guid.NewGuid();
         var brandId = Guid.NewGuid();
-        var seed = Seed(runId, brandId);
+        var seed = TestGeneration.Seed(runId, brandId);
 
         // Generation twice = a worker crash before the checkpoint, then a Hangfire re-run.
         var g1 = await orchestrator.RunGenerationAsync(seed);

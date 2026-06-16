@@ -1,10 +1,9 @@
 using Backend.Core.Common;
 using Backend.Core.Orchestration;
-using Backend.Core.Orchestration.Contracts;
 using Backend.Core.Storage;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Orchestration.Maf;
-using Backend.Infrastructure.Tracing;
+using Backend.IntegrationTests.Support;
 using Xunit;
 
 namespace Backend.IntegrationTests.Storage;
@@ -21,20 +20,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
 
     public StorageTests(MinioFixture fixture) => _fixture = fixture;
 
-    private static RunState NewState(Guid brandId) => new(
-        RunId: Guid.NewGuid(),
-        BrandId: brandId,
-        Phase: GraphPhase.Strategy,
-        Strategy: null,
-        Creative: null,
-        Caption: null,
-        Media: null,
-        Draft: null,
-        Approval: null,
-        Publish: null,
-        Budget: new Budget(TokenBudget: 10_000, TokensSpent: 0, MediaBudget: 1.00m, MediaSpent: 0m),
-        Errors: [],
-        Trace: new TraceRefs(TraceId: string.Empty, SpanIds: [], Spans: []));
+    private static RunState NewState(Guid brandId) => TestGeneration.Seed(Guid.NewGuid(), brandId);
 
     [Fact]
     public async Task Generation_writes_a_brand_prefixed_object_that_exists_in_storage()
@@ -42,7 +28,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
         var orchestrator = new MafOrchestrator(
-            _fixture.Storage, new MockMetaIntegration(), new LocalTraceRecorder());
+            TestGeneration.Deps(storage: _fixture.Storage), new MockMetaIntegration());
 
         var result = await orchestrator.RunGenerationAsync(state);
 
@@ -59,7 +45,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
         var brandA = Guid.NewGuid();
         var brandB = Guid.NewGuid();
         var orchestrator = new MafOrchestrator(
-            _fixture.Storage, new MockMetaIntegration(), new LocalTraceRecorder());
+            TestGeneration.Deps(storage: _fixture.Storage), new MockMetaIntegration());
 
         var result = await orchestrator.RunGenerationAsync(NewState(brandA));
 
@@ -77,7 +63,7 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
         var orchestrator = new MafOrchestrator(
-            _fixture.Storage, new MockMetaIntegration(), new LocalTraceRecorder());
+            TestGeneration.Deps(storage: _fixture.Storage), new MockMetaIntegration());
 
         var first = await orchestrator.RunGenerationAsync(state);
         var second = await orchestrator.RunGenerationAsync(state);
