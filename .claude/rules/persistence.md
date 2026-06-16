@@ -11,8 +11,9 @@ paths:
      inline in AppDbContext.OnModelCreating — there are no separate IEntityTypeConfiguration
      classes. The RLS-in-migration convention is owned by migrations.md and is NOT restated here. -->
 
-## Audit is durable and append-only
-- `ApprovalAction` (human gate actions) and `PublishRecord` (publish outcomes) are append-only business records. Never UPDATE a row; a correction is a new row. The gate is re-entrant, so a run may have multiple `ApprovalAction` rows.
+## Audit durability
+- `ApprovalAction` (human gate actions) is strictly append-only: never UPDATE a row; a correction is a new row. The gate is re-entrant, so a run may have multiple `ApprovalAction` rows.
+- `PublishRecord` (publish outcomes) is NOT strictly append-only: it is inserted in-flight (`CreationId` set, `ExternalRef` null) and completed by a SINGLE finalizing update (`ExternalRef` + `Status`). That one update is the only permitted mutation — it completes the publish operation's durable state, not an audit-history rewrite (DL-042). A re-publish recovers the existing record; it does not rewrite it.
 - The human edit overlay (`EditedCaption` / `EditedHashtags`) lives on `ApprovalAction`, NEVER on `RunState.Draft`.
 
 ## Audit is RLS-scoped
@@ -23,7 +24,7 @@ paths:
 - Audit writes go straight to Postgres and are NEVER gated by Langfuse / `ITrace`. Tracing is optional observability (may fall back to local or be absent); the audit must always persist. Do not route an approval/publish record through the trace.
 
 ## Idempotency source of truth
-- `PublishRecord` (keyed by `contentItemId`) is the source of truth for the pre-publish "already published?" guard. The publish path reads it before the publish step (see `orchestration.md`).
+- `PublishRecord` (keyed by `contentItemId`) is the source of truth for the robust creation-id idempotency guard: before publishing, the publish path reads it to decide create / re-publish-on-`CreationId` / skip (see `orchestration.md` + `meta-integration.md`).
 
 ## Enum persistence
 - `RunStatus` members are APPEND-only: `Scheduled` and `Cancelled` are new values; never renumber existing ones. If stored as int via `HasConversion`, the numeric values are load-bearing; if stored as a string, the member names are.

@@ -1,6 +1,6 @@
 # Audit: ApprovalAction and persisted PublishResult (DL-040)
 
-**Model A**: human actions on `ApprovalAction`, the system publish outcome on a persisted `PublishRecord`. The unified per-post timeline is a read projection, not a third table. Both are **durable, RLS-scoped, and never gated by Langfuse** — disabling tracing must not drop the audit. (Angle brackets below are required C# generic syntax inside code blocks only.)
+**Model A**: human actions on `ApprovalAction`, the system publish outcome on a persisted `PublishRecord`. The unified per-post timeline is a read projection, not a third table. `ApprovalAction` is strictly append-only; `PublishRecord` has a single in-flight→finalized update (see below). Both are **durable, RLS-scoped, and never gated by Langfuse** — disabling tracing must not drop the audit. (Angle brackets below are required C# generic syntax inside code blocks only.)
 
 ## ApprovalAction (human-action record, append-only)
 
@@ -48,6 +48,7 @@ public record PublishRecord(
 ```
 
 - This row is the **source of truth** for the robust creation-id idempotency guard (see `meta-integration.md`): `CreationId` is persisted (committed) immediately after create and BEFORE publish, so a crash-and-retry re-publishes the same container (Meta dedups) rather than creating a second post. `ExternalRef != null` marks the record finalized. A `CreationId` with a null `ExternalRef` is an in-flight publish to recover, not a finished one.
+- **Mutability** — unlike `ApprovalAction` (strictly append-only), `PublishRecord` is inserted in-flight (`CreationId` set, `ExternalRef` null) and completed by a **single finalizing update** (`ExternalRef` + `Status`). That one update is the only permitted mutation; it completes the publish operation's durable state and is not an audit-history rewrite. No other mutation is allowed — a re-publish recovers the existing record, it does not rewrite it.
 
 ## RLS
 
