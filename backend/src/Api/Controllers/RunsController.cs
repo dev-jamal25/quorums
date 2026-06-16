@@ -211,7 +211,7 @@ public sealed class RunsController : ControllerBase
             // Schedule before commit to capture the job id (persisted so cancel can Delete it). If the
             // commit then fails, only an orphan delayed job remains and it no-ops (run stays AwaitingApproval).
             var jobId = _jobs.Schedule<ResumeRunJob>(
-                job => job.ExecuteAsync(id, brandId, CancellationToken.None),
+                job => job.ExecuteAsync(id, brandId, null, CancellationToken.None),
                 scheduledFor - now);
             run.ScheduledJobId = jobId;
 
@@ -229,7 +229,7 @@ public sealed class RunsController : ControllerBase
         await _db.SaveChangesAsync(cancellationToken);
         await handle.CompleteAsync(cancellationToken);
 
-        _jobs.Enqueue<ResumeRunJob>(job => job.ExecuteAsync(id, brandId, CancellationToken.None));
+        _jobs.Enqueue<ResumeRunJob>(job => job.ExecuteAsync(id, brandId, null, CancellationToken.None));
         return Ok();
     }
 

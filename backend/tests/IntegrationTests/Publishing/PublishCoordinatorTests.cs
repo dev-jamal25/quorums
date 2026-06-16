@@ -16,7 +16,8 @@ namespace Backend.IntegrationTests.Publishing;
 /// the typed result; a finalized record short-circuits with no publish.
 /// </summary>
 [Trait("Category", "Publish")]
-public sealed class PublishCoordinatorTests : IClassFixture<DurabilityFixture>
+[Collection("Durability")]
+public sealed class PublishCoordinatorTests
 {
     private readonly DurabilityFixture _fixture;
 

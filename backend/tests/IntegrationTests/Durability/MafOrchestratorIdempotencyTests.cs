@@ -1,26 +1,24 @@
-using Backend.Core.Domain;
 using Backend.Core.Orchestration;
 using Backend.Core.Storage;
-using Backend.Infrastructure.Orchestration.Maf;
 using Backend.IntegrationTests.Support;
 using Xunit;
 
 namespace Backend.IntegrationTests.Durability;
 
 /// <summary>
-/// Orchestrator-level (no DB) proof that the real MAF graph keeps the c1/c2 side effects
-/// idempotent: re-running the generation segment writes a single asset, and re-running the
-/// publish segment re-uses the same external reference — no duplicate asset, no double post.
+/// Orchestrator-level (no DB) proof that the real MAF generation graph is idempotent: re-running the
+/// generation segment writes a single asset — no duplicate asset under a worker-crash re-run (DL-022).
+/// The publish segment now persists to Postgres (the coordinator owns a brand-scoped <c>PublishRecord</c>);
+/// its idempotency is proven end-to-end in <c>PublishNodeTests</c> + the Slice-2 coordinator tests.
 /// </summary>
 [Trait("Category", "Durability")]
 public sealed class MafOrchestratorIdempotencyTests
 {
     [Fact]
-    public async Task Generation_rerun_writes_single_asset_then_publish_rerun_keeps_one_ref()
+    public async Task Generation_rerun_writes_a_single_asset()
     {
         var storage = new InMemoryStorageService();
-        var meta = new RecordingMetaIntegration();
-        var orchestrator = new MafOrchestrator(TestGeneration.Deps(storage: storage), meta);
+        var orchestrator = TestGeneration.Orchestrator(TestGeneration.Deps(storage: storage));
         var runId = Guid.NewGuid();
         var brandId = Guid.NewGuid();
         var seed = TestGeneration.Seed(runId, brandId);
@@ -48,15 +46,5 @@ public sealed class MafOrchestratorIdempotencyTests
         Assert.Contains(g1.Trace.Spans, s => s.Node == "copywriting");
         Assert.Contains(g1.Trace.Spans, s => s.Node == "media" && s.Tool == "minio.put");
         Assert.Equal(g1.Trace.Spans.Count, g1.Trace.SpanIds.Count);
-
-        // Publish twice = a publish-segment crash, then a retry.
-        var p1 = await orchestrator.RunPublishAsync(g1);
-        var p2 = await orchestrator.RunPublishAsync(g1);
-
-        Assert.Equal(GraphPhase.Done, p1.Phase);
-        Assert.StartsWith("mock://meta/", p1.Publish!.ExternalRef!);
-        Assert.Equal(PublishStatus.Published, p1.Publish.Status);
-        Assert.Equal(p1.Publish.ExternalRef, p2.Publish!.ExternalRef); // deterministic ref (DL-022)
-        Assert.Single(meta.PublishedRefs.Distinct());                  // no second distinct post
     }
 }

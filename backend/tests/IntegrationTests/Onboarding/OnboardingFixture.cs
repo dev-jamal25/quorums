@@ -1,5 +1,6 @@
 using Backend.Core.Multitenancy;
 using Backend.Core.Onboarding;
+using Backend.Infrastructure.Configuration.Secrets;
 using Backend.Infrastructure.Multitenancy;
 using Backend.Infrastructure.Onboarding;
 using Backend.Infrastructure.Persistence;
@@ -66,7 +67,7 @@ public sealed class OnboardingFixture : IAsyncLifetime
         var db = CreateDbContext(AppUserConnectionString);
         var brandContext = new BrandContext();
         var scope = new BrandScope(db, brandContext);
-        return (db, new BrandOnboardingService(db, brandContext, scope));
+        return (db, new BrandOnboardingService(db, brandContext, scope, new PassthroughSecretsProvider()));
     }
 
     private static AppDbContext CreateDbContext(string connectionString)

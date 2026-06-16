@@ -3,6 +3,7 @@
 // config). The Hangfire server, job registration (ExecuteRunJob/ResumeRunJob), and
 // the shared Infrastructure DI wiring are added in the build-order slices.
 using Backend.Infrastructure.Configuration;
+using Backend.Infrastructure.Configuration.Secrets;
 using Backend.Infrastructure.Generation;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
@@ -17,6 +18,7 @@ var builder = Host.CreateApplicationBuilder(args);
 await builder.Configuration.AddVaultKvSecretsAsync();
 
 builder.Services.AddValidatedAppOptions(builder.Configuration);
+builder.Services.AddSecrets(builder.Configuration);
 builder.Services.AddDataAccess();
 builder.Services.AddKnowledge(builder.Configuration);
 builder.Services.AddHangfireJobStore(builder.Configuration);

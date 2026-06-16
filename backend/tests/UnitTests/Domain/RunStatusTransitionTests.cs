@@ -20,6 +20,7 @@ public sealed class RunStatusTransitionTests
         { RunStatus.AwaitingApproval, RunStatus.Publishing },
         { RunStatus.AwaitingApproval, RunStatus.Rejected },
         { RunStatus.Publishing, RunStatus.Done },
+        { RunStatus.Publishing, RunStatus.Failed },          // terminal/exhausted publish failure (Slice 4)
         // New Phase-6 edges.
         { RunStatus.AwaitingApproval, RunStatus.Scheduled },
         { RunStatus.Scheduled, RunStatus.Publishing },

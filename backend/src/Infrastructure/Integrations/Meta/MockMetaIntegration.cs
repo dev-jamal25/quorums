@@ -37,8 +37,18 @@ public sealed class MockMetaIntegration : IMetaIntegration
     /// <summary>Distinct containers created — proves a crashed create leaves an orphan.</summary>
     public int ContainerCount => _containers.Count;
 
+    /// <summary>Total publish-container calls regardless of outcome — pins the retry/attempt count.</summary>
+    public int PublishAttemptCount => _publishAttempts;
+
+    /// <summary>The last create request — lets a test assert the EFFECTIVE caption/hashtags (the overlay).</summary>
+    public PublishRequest? LastRequest { get; private set; }
+
+    private int _publishAttempts;
+
     public Task<ContainerResult> CreateContainerAsync(PublishRequest request, CancellationToken cancellationToken = default)
     {
+        LastRequest = request;
+
         if (FailCreateWith is { } failure)
         {
             return Task.FromResult(new ContainerResult(null, failure, $"mock create {failure}"));
@@ -70,6 +80,8 @@ public sealed class MockMetaIntegration : IMetaIntegration
 
     public Task<PublishResult> PublishContainerAsync(string creationId, CancellationToken cancellationToken = default)
     {
+        Interlocked.Increment(ref _publishAttempts);
+
         if (FailPublishWith is { } failure)
         {
             return Task.FromResult(new PublishResult(failure, null, $"mock publish {failure}", null));

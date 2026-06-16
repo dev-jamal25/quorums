@@ -18,7 +18,7 @@ public sealed class GenerationPipelineTests
     public async Task Happy_run_reaches_awaiting_approval_with_a_draft_and_full_trace()
     {
         var media = new RecordingMediaGenerationTool();
-        var orchestrator = new MafOrchestrator(TestGeneration.Deps(media: media), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(TestGeneration.Deps(media: media));
 
         var result = await orchestrator.RunGenerationAsync(TestGeneration.Seed(Guid.NewGuid(), Guid.NewGuid()));
 
@@ -45,9 +45,9 @@ public sealed class GenerationPipelineTests
     public async Task Media_budget_breach_yields_a_valid_caption_only_draft_with_zero_media_calls()
     {
         var media = new RecordingMediaGenerationTool();
-        var orchestrator = new MafOrchestrator(TestGeneration.Deps(media: media), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(TestGeneration.Deps(media: media));
 
-        // MediaBudget = 0 → the pre-Media gate degrades; Copywriting is independent and completes.
+        // MediaBudget = 0 â†’ the pre-Media gate degrades; Copywriting is independent and completes.
         var seed = TestGeneration.Seed(Guid.NewGuid(), Guid.NewGuid(),
             budget: new Budget(TokenBudget: 10_000, TokensSpent: 0, MediaBudget: 0m, MediaSpent: 0m));
 
@@ -55,7 +55,7 @@ public sealed class GenerationPipelineTests
 
         Assert.Null(result.FatalError);                              // a degrade, not a failure (R1)
         Assert.Equal(GraphPhase.AwaitingApproval, result.Phase);    // reaches the gate
-        Assert.NotNull(result.Caption);                             // copy completed — no hung barrier
+        Assert.NotNull(result.Caption);                             // copy completed â€” no hung barrier
         Assert.Null(result.Media);
         Assert.NotNull(result.Draft);
         Assert.Equal("degraded-caption-only", result.Draft!.Status);
@@ -69,12 +69,12 @@ public sealed class GenerationPipelineTests
     {
         var media = new RecordingMediaGenerationTool();
 
-        // The Media gate's fork-time snapshot is Σ pre-fork IncurredCosts (R2): Strategist $0.036 +
+        // The Media gate's fork-time snapshot is Î£ pre-fork IncurredCosts (R2): Strategist $0.036 +
         // selection $0.00525 + CD $0.01575 = $0.057 (test prices). A $0.05 ceiling sits ABOVE the
-        // largest single node ($0.036) and BELOW the accumulated sum ($0.057) — so only the summed
+        // largest single node ($0.036) and BELOW the accumulated sum ($0.057) â€” so only the summed
         // pre-fork spend breaches it, and it breaches before the first IMediaGenerationTool call.
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(media: media, globalCeilingUsd: 0.05m), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(media: media, globalCeilingUsd: 0.05m));
 
         var result = await orchestrator.RunGenerationAsync(TestGeneration.Seed(Guid.NewGuid(), Guid.NewGuid()));
 
@@ -91,11 +91,11 @@ public sealed class GenerationPipelineTests
         var media = new RecordingMediaGenerationTool();
 
         // Bracket the other side: $0.057 (pre-fork sum) < $0.07 ceiling < $0.097 (pre-fork + the
-        // $0.04 image). The gate snapshots pre-fork spend ONLY — it never pre-charges the pending
-        // media dollar — so the run proceeds, the image renders, and total spend overshoots the
+        // $0.04 image). The gate snapshots pre-fork spend ONLY â€” it never pre-charges the pending
+        // media dollar â€” so the run proceeds, the image renders, and total spend overshoots the
         // ceiling without re-checking at the fan-in (the accepted R2 overshoot bound).
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(media: media, globalCeilingUsd: 0.07m), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(media: media, globalCeilingUsd: 0.07m));
 
         var result = await orchestrator.RunGenerationAsync(TestGeneration.Seed(Guid.NewGuid(), Guid.NewGuid()));
 
@@ -108,8 +108,8 @@ public sealed class GenerationPipelineTests
     [Fact]
     public async Task Strategist_retry_exhaustion_fails_the_run()
     {
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(failTools: ["record_strategy_candidates"]), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(failTools: ["record_strategy_candidates"]));
 
         var result = await orchestrator.RunGenerationAsync(TestGeneration.Seed(Guid.NewGuid(), Guid.NewGuid()));
 
@@ -121,8 +121,8 @@ public sealed class GenerationPipelineTests
     [Fact]
     public async Task Copywriting_retry_exhaustion_fails_the_run_because_a_caption_is_required()
     {
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(failTools: ["record_caption"]), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(failTools: ["record_caption"]));
 
         var result = await orchestrator.RunGenerationAsync(TestGeneration.Seed(Guid.NewGuid(), Guid.NewGuid()));
 
@@ -133,8 +133,8 @@ public sealed class GenerationPipelineTests
     [Fact]
     public async Task Empty_retrieval_proceeds_ungrounded_to_a_lower_confidence_draft()
     {
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(retrieval: FakeRetrievalService.Empty()), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(retrieval: FakeRetrievalService.Empty()));
 
         var result = await orchestrator.RunGenerationAsync(TestGeneration.Seed(Guid.NewGuid(), Guid.NewGuid()));
 
@@ -142,7 +142,7 @@ public sealed class GenerationPipelineTests
         Assert.Equal(GraphPhase.AwaitingApproval, result.Phase);
         Assert.NotNull(result.Draft);
         Assert.NotNull(result.Strategy);
-        Assert.False(result.Strategy!.Grounding.Grounded);   // ungrounded — derived from empty provenance (R6/R8)
+        Assert.False(result.Strategy!.Grounding.Grounded);   // ungrounded â€” derived from empty provenance (R6/R8)
         Assert.Empty(result.Strategy.Grounding.ChunkIdsUsed);
     }
 }

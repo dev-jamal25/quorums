@@ -17,7 +17,8 @@ namespace Backend.IntegrationTests.Publishing;
 /// Schedule / Delete). Edit-validation 400 is proven in the validator unit tests.
 /// </summary>
 [Trait("Category", "Gate")]
-public sealed class GateEndpointsTests : IClassFixture<DurabilityFixture>
+[Collection("Durability")]
+public sealed class GateEndpointsTests
 {
     private static readonly string[] _editedHashtags = ["#edited"];
 
@@ -74,7 +75,7 @@ public sealed class GateEndpointsTests : IClassFixture<DurabilityFixture>
         Assert.Equal(_editedHashtags, action.EditedHashtags);
         Assert.Equal(1, jobs.EnqueueCount);
 
-        // The overlay lives on the audit row — RunState.Draft (the checkpoint) is byte-identical (DL-035).
+        // The overlay lives on the audit row â€” RunState.Draft (the checkpoint) is byte-identical (DL-035).
         var (rdb, rscope) = _fixture.CreateReadContext(_fixture.BrandA);
         await using (rdb)
         {

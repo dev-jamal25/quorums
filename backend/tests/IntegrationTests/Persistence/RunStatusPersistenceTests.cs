@@ -8,11 +8,12 @@ namespace Backend.IntegrationTests.Persistence;
 /// <summary>
 /// RunStatus enum-persistence round-trip (DL-037). Proves the two appended members (Scheduled,
 /// Cancelled) persist and re-read, and that EVERY pre-existing value still stores under its original
-/// representation — the member NAME, since <c>RunStatus</c> is mapped <c>HasConversion&lt;string&gt;()</c>.
+/// representation â€” the member NAME, since <c>RunStatus</c> is mapped <c>HasConversion&lt;string&gt;()</c>.
 /// Reading the raw column guards against an accidental renumber/rename that would silently break
 /// existing rows.
 /// </summary>
-public sealed class RunStatusPersistenceTests : IClassFixture<DurabilityFixture>
+[Collection("Durability")]
+public sealed class RunStatusPersistenceTests
 {
     private readonly DurabilityFixture _fixture;
 
@@ -41,7 +42,7 @@ public sealed class RunStatusPersistenceTests : IClassFixture<DurabilityFixture>
         var readBack = await _fixture.ReadRunStatusAsync(runId, _fixture.BrandA);
         Assert.Equal(status, readBack);
 
-        // The raw persisted representation is the member NAME, not an int — catches a renumber/rename.
+        // The raw persisted representation is the member NAME, not an int â€” catches a renumber/rename.
         await using var conn = new NpgsqlConnection(_fixture.SuperuserConnectionString);
         await conn.OpenAsync();
         await using var cmd = new NpgsqlCommand("SELECT status FROM agent_runs WHERE id = @id", conn);

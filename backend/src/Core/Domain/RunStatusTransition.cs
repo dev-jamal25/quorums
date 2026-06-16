@@ -22,7 +22,8 @@ public static class RunStatusTransition
             [RunStatus.AwaitingApproval] = FrozenSet.ToFrozenSet(
                 [RunStatus.Publishing, RunStatus.Scheduled, RunStatus.Rejected, RunStatus.Running]),
             [RunStatus.Scheduled] = FrozenSet.ToFrozenSet([RunStatus.Publishing, RunStatus.Cancelled]),
-            [RunStatus.Publishing] = FrozenSet.ToFrozenSet([RunStatus.Done]),
+            // Publishing -> Failed: a terminal/exhausted publish failure (DL-022/039, Slice 4).
+            [RunStatus.Publishing] = FrozenSet.ToFrozenSet([RunStatus.Done, RunStatus.Failed]),
             // Done / Failed / Rejected / Cancelled are terminal — no outgoing edges.
         }.ToFrozenDictionary();
 

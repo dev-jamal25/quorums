@@ -27,8 +27,8 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(storage: _fixture.Storage), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(storage: _fixture.Storage));
 
         var result = await orchestrator.RunGenerationAsync(state);
 
@@ -44,8 +44,8 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandA = Guid.NewGuid();
         var brandB = Guid.NewGuid();
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(storage: _fixture.Storage), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(storage: _fixture.Storage));
 
         var result = await orchestrator.RunGenerationAsync(NewState(brandA));
 
@@ -62,13 +62,13 @@ public sealed class StorageTests : IClassFixture<MinioFixture>
     {
         var brandId = Guid.NewGuid();
         var state = NewState(brandId);
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(storage: _fixture.Storage), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(storage: _fixture.Storage));
 
         var first = await orchestrator.RunGenerationAsync(state);
         var second = await orchestrator.RunGenerationAsync(state);
 
-        // Same run id → deterministic asset id → identical key → overwrite, not duplicate.
+        // Same run id â†’ deterministic asset id â†’ identical key â†’ overwrite, not duplicate.
         Assert.Equal(first.Media!.StorageKey, second.Media!.StorageKey);
 
         var assetId = DeterministicGuid.From(state.RunId, "asset");

@@ -7,12 +7,13 @@ using Xunit;
 namespace Backend.IntegrationTests.Publishing;
 
 /// <summary>
-/// Exercises the publish seam end-to-end through the durable jobs: ExecuteRun →
-/// approve → ResumeRun publishes via <c>MockMetaIntegration</c>. Reuses the
+/// Exercises the publish seam end-to-end through the durable jobs: ExecuteRun â†’
+/// approve â†’ ResumeRun publishes via <c>MockMetaIntegration</c>. Reuses the
 /// durability fixture (real Postgres + RLS-bound contexts).
 /// </summary>
 [Trait("Category", "Publish")]
-public sealed class PublishTests : IClassFixture<DurabilityFixture>
+[Collection("Durability")]
+public sealed class PublishTests
 {
     private readonly DurabilityFixture _fixture;
 

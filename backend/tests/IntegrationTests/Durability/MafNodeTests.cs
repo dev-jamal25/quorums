@@ -198,37 +198,8 @@ public sealed class MafNodeTests
         Assert.Equal(copyFirst.Trace.Spans.Count, mediaFirst.Trace.Spans.Count);
     }
 
-    [Fact]
-    public async Task Publishing_publishes_via_mock_and_reaches_done()
-    {
-        var node = new PublishingExecutor(new MockMetaIntegration(), new LocalTraceRecorder());
-        var state = Base(Guid.NewGuid(), Guid.NewGuid()) with
-        {
-            Caption = new Caption("hook", "body", ["#stub"], new Grounding(false, [], Confidence.Low)),
-        };
-
-        var result = await node.RunAsync(state);
-
-        Assert.Equal(GraphPhase.Done, result.Phase);
-        Assert.StartsWith("mock://meta/", result.Publish!.ExternalRef!);
-        Assert.Equal(PublishStatus.Published, result.Publish.Status);
-        Assert.Contains(result.Trace.Spans, s => s.Node == "publishing" && s.Tool == "meta.publish" && s.Status == "ok");
-    }
-
-    [Fact]
-    public async Task Publishing_external_ref_is_deterministic_across_retries()
-    {
-        var node = new PublishingExecutor(new MockMetaIntegration(), new LocalTraceRecorder());
-        var state = Base(Guid.NewGuid(), Guid.NewGuid()) with
-        {
-            Caption = new Caption("h", "b", ["#x"], new Grounding(false, [], Confidence.Low)),
-        };
-
-        var first = await node.RunAsync(state);
-        var second = await node.RunAsync(state);
-
-        Assert.Equal(first.Publish!.ExternalRef, second.Publish!.ExternalRef); // keyed by run id (DL-022)
-    }
+    // The publishing node now delegates to PublishCoordinator with brand-scoped DB I/O (overlay,
+    // token, PublishRecord); it is covered end-to-end in PublishNodeTests, not here.
 
     [Fact]
     public async Task Stub_nodes_return_not_implemented_marker_and_do_not_throw()

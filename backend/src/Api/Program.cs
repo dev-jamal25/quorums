@@ -8,6 +8,7 @@ using Backend.Api.Hangfire;
 using Backend.Api.HealthChecks;
 using Backend.Api.Middleware;
 using Backend.Infrastructure.Configuration;
+using Backend.Infrastructure.Configuration.Secrets;
 using Backend.Infrastructure.Generation;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
@@ -26,6 +27,7 @@ var builder = WebApplication.CreateBuilder(args);
 await builder.Configuration.AddVaultKvSecretsAsync();
 
 builder.Services.AddValidatedAppOptions(builder.Configuration);
+builder.Services.AddSecrets(builder.Configuration);
 builder.Services.AddDataAccess();
 builder.Services.AddOnboarding();
 builder.Services.AddKnowledge(builder.Configuration);

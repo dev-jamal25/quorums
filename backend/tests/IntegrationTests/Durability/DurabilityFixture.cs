@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Backend.Core.Domain;
+using Backend.Core.Integrations;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
+using Backend.Infrastructure.Configuration.Secrets;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Multitenancy;
@@ -9,6 +11,7 @@ using Backend.Infrastructure.Orchestration.Maf;
 using Backend.Infrastructure.Persistence;
 using Backend.IntegrationTests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Pgvector.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
@@ -97,7 +100,9 @@ public sealed class DurabilityFixture : IAsyncLifetime
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new MafOrchestrator(deps ?? TestGeneration.Deps(), new MockMetaIntegration());
+        var secrets = new PassthroughSecretsProvider();
+        var coordinator = new PublishCoordinator(db, scope, new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(deps ?? TestGeneration.Deps(), coordinator, db, scope, secrets);
         return (db, new ExecuteRunJob(db, scope, brandContext, orchestrator));
     }
 
@@ -114,14 +119,20 @@ public sealed class DurabilityFixture : IAsyncLifetime
     }
 
     public (AppDbContext Db, ResumeRunJob Job) CreateResumeRunJob(Guid brandId)
+        => CreateResumeRunJob(brandId, new MockMetaIntegration());
+
+    /// <summary>Resume job wired with a caller-supplied Meta integration (so a test can inject
+    /// deterministic failures and read its counters) over a brand-scoped, RLS-bound context.</summary>
+    public (AppDbContext Db, ResumeRunJob Job) CreateResumeRunJob(Guid brandId, IMetaIntegration meta)
     {
         var db = CreateAppDbContext();
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(), new MockMetaIntegration());
-        return (db, new ResumeRunJob(db, scope, brandContext, orchestrator));
+        var coordinator = new PublishCoordinator(db, scope, meta);
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(), coordinator, db, scope, new PassthroughSecretsProvider());
+        return (db, new ResumeRunJob(db, scope, brandContext, orchestrator, NullLogger<ResumeRunJob>.Instance));
     }
 
     /// <summary>
@@ -219,6 +230,13 @@ public sealed class DurabilityFixture : IAsyncLifetime
         seed.Brands.AddRange(
             new Brand { Id = BrandA, Name = "Brand A", CreatedAt = now },
             new Brand { Id = BrandB, Name = "Brand B", CreatedAt = now });
+
+        // A demo Meta connection per brand so the publish path resolves a token (dev passthrough
+        // ciphertext == plaintext). Seeded via superuser (bypasses RLS), like the brands themselves.
+        seed.BrandMetaConnections.AddRange(
+            new BrandMetaConnection { Id = Guid.NewGuid(), BrandId = BrandA, TokenCiphertext = "demo-meta-token", TokenType = "bearer" },
+            new BrandMetaConnection { Id = Guid.NewGuid(), BrandId = BrandB, TokenCiphertext = "demo-meta-token", TokenType = "bearer" });
+
         await seed.SaveChangesAsync();
     }
 }

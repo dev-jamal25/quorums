@@ -1,6 +1,7 @@
 using Backend.Core.Domain;
 using Backend.Core.Multitenancy;
 using Backend.Core.Onboarding;
+using Backend.Core.Secrets;
 using Backend.Infrastructure.Persistence;
 
 namespace Backend.Infrastructure.Onboarding;
@@ -15,18 +16,24 @@ namespace Backend.Infrastructure.Onboarding;
 /// </summary>
 internal sealed class BrandOnboardingService : IBrandOnboardingService
 {
+    // Dummy demo token: the mock never calls Meta; the encrypt→store→decrypt round-trip is what is real.
+    private const string DemoMetaToken = "demo-meta-token";
+
     private readonly AppDbContext _dbContext;
     private readonly IBrandContext _brandContext;
     private readonly IBrandScope _brandScope;
+    private readonly ISecretsProvider _secrets;
 
     public BrandOnboardingService(
         AppDbContext dbContext,
         IBrandContext brandContext,
-        IBrandScope brandScope)
+        IBrandScope brandScope,
+        ISecretsProvider secrets)
     {
         _dbContext = dbContext;
         _brandContext = brandContext;
         _brandScope = brandScope;
+        _secrets = secrets;
     }
 
     public async Task<Guid> OnboardAsync(
@@ -35,6 +42,10 @@ internal sealed class BrandOnboardingService : IBrandOnboardingService
     {
         // The brand id is app-assigned here, never supplied by the caller.
         var brandId = Guid.NewGuid();
+
+        // Encrypt the demo Meta token BEFORE opening the work transaction, so a (live) Vault Transit
+        // call never holds a DB transaction open (DL-011). Passthrough in dev/CI.
+        var tokenCiphertext = await _secrets.EncryptAsync(DemoMetaToken, cancellationToken).ConfigureAwait(false);
 
         // Self-scope: bind the context to the id we just minted (NOT from auth — the
         // brand does not exist yet), so the work transaction's first statement binds
@@ -70,6 +81,16 @@ internal sealed class BrandOnboardingService : IBrandOnboardingService
             AudiencePainPoints = [.. command.AudiencePainPoints],
             ProductContext = command.ProductContext,
             CreatedAt = now,
+        });
+
+        // Per-brand Meta credentials as Transit ciphertext (DL-011), brand-scoped (FORCE RLS). Demo
+        // value; decrypted on-use only at publish time inside the publish node.
+        _dbContext.BrandMetaConnections.Add(new BrandMetaConnection
+        {
+            Id = Guid.NewGuid(),
+            BrandId = brandId,
+            TokenCiphertext = tokenCiphertext,
+            TokenType = "bearer",
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
