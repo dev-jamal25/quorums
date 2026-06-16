@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Backend.Core.Domain;
 
 /// <summary>
@@ -5,8 +7,10 @@ namespace Backend.Core.Domain;
 /// writer of this value; agents never advance it directly. Persisted as text via
 /// <c>HasConversion&lt;string&gt;()</c>, so the member NAMES are the stored representation —
 /// new members are APPENDED, never renumbered (the explicit values document the order and
-/// guard against a future switch to int storage).
+/// guard against a future switch to int storage). Serialized to JSON as its name (targeted
+/// per-enum converter) so the API contract reads <c>"AwaitingApproval"</c>, not <c>2</c>.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum RunStatus
 {
     Queued = 0,

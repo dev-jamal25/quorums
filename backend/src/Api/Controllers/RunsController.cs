@@ -3,6 +3,7 @@ using Backend.Api.Dtos;
 using Backend.Core.Domain;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
+using Backend.Core.Storage;
 using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Persistence;
@@ -21,6 +22,7 @@ public sealed class RunsController : ControllerBase
     private readonly IBrandScope _scope;
     private readonly IBrandContext _brandContext;
     private readonly IBackgroundJobClient _jobs;
+    private readonly IStorageService _storage;
     private readonly RegenerationOptions _regeneration;
 
     public RunsController(
@@ -28,12 +30,14 @@ public sealed class RunsController : ControllerBase
         IBrandScope scope,
         IBrandContext brandContext,
         IBackgroundJobClient jobs,
+        IStorageService storage,
         IOptions<RegenerationOptions> regeneration)
     {
         _db = db;
         _scope = scope;
         _brandContext = brandContext;
         _jobs = jobs;
+        _storage = storage;
         _regeneration = regeneration.Value;
     }
 
@@ -67,6 +71,28 @@ public sealed class RunsController : ControllerBase
         _jobs.Enqueue<ExecuteRunJob>(job => job.ExecuteAsync(run.Id, brandId, CancellationToken.None));
 
         return Accepted($"/runs/{run.Id}", new CreateRunResponse(run.Id));
+    }
+
+    [HttpGet]
+    [ProducesResponseType(typeof(IReadOnlyList<RunSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyList<RunSummaryDto>>> List(CancellationToken cancellationToken)
+    {
+        if (!_brandContext.HasBrand)
+        {
+            return BadRequest(new { error = "X-Brand-Id header is required." });
+        }
+
+        await using var handle = await _scope.BeginAsync(cancellationToken);
+
+        // RLS-scoped: a brand lists only its own runs. Newest first for the dashboard.
+        var runs = await _db.AgentRuns.AsNoTracking()
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new RunSummaryDto(r.Id, r.Status, r.CreatedAt, r.UpdatedAt))
+            .ToListAsync(cancellationToken);
+
+        await handle.CompleteAsync(cancellationToken);
+        return Ok(runs);
     }
 
     [HttpGet("{id:guid}")]
@@ -156,6 +182,91 @@ public sealed class RunsController : ControllerBase
         return Ok(new RunTraceResponse(run.Id, state.Trace.TraceId, spans));
     }
 
+    [HttpGet("{id:guid}/review")]
+    [ProducesResponseType(typeof(RunReviewDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RunReviewDto>> Review(Guid id, CancellationToken cancellationToken)
+    {
+        if (!_brandContext.HasBrand)
+        {
+            return BadRequest(new { error = "X-Brand-Id header is required." });
+        }
+
+        await using var handle = await _scope.BeginAsync(cancellationToken);
+
+        // Everything assembled under the one RLS-bound scope: the run, its checkpoint, the gate history,
+        // and the publish outcome. A brand can only project its own run.
+        var run = await _db.AgentRuns.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+        if (run is null)
+        {
+            await handle.CompleteAsync(cancellationToken);
+            return NotFound();
+        }
+
+        var checkpoint = await _db.RunCheckpoints.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.AgentRunId == id, cancellationToken);
+        var state = checkpoint is null
+            ? null
+            : JsonSerializer.Deserialize<RunState>(checkpoint.StateJson, RunStateJsonOptions.Options);
+
+        var actions = await _db.ApprovalActions.AsNoTracking()
+            .Where(a => a.AgentRunId == id)
+            .ToListAsync(cancellationToken);
+
+        var publish = await _db.PublishRecords.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.AgentRunId == id, cancellationToken);
+
+        await handle.CompleteAsync(cancellationToken);
+
+        // Pure projection; the available-actions list comes from the same GateActionPolicy the gate
+        // endpoints enforce (no second copy of the state machine).
+        return Ok(RunReviewProjection.From(run, state, actions, publish, _regeneration.MaxPerRun));
+    }
+
+    [HttpGet("{id:guid}/media")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Media(Guid id, CancellationToken cancellationToken)
+    {
+        if (!_brandContext.HasBrand)
+        {
+            return BadRequest(new { error = "X-Brand-Id header is required." });
+        }
+
+        string? key;
+        await using (var handle = await _scope.BeginAsync(cancellationToken))
+        {
+            // Resolve the storage key from the brand's own RLS-scoped checkpoint — never a
+            // caller-supplied key — so the proxied object can only be this brand's asset.
+            var run = await _db.AgentRuns.AsNoTracking()
+                .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+            if (run is null)
+            {
+                await handle.CompleteAsync(cancellationToken);
+                return NotFound();
+            }
+
+            var checkpoint = await _db.RunCheckpoints.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.AgentRunId == id, cancellationToken);
+            var state = checkpoint is null
+                ? null
+                : JsonSerializer.Deserialize<RunState>(checkpoint.StateJson, RunStateJsonOptions.Options);
+
+            key = state?.Draft?.MediaRef?.StorageKey ?? state?.Media?.StorageKey;
+            await handle.CompleteAsync(cancellationToken);
+        }
+
+        if (key is null)
+        {
+            return NotFound();
+        }
+
+        var media = await _storage.GetAsync(key, cancellationToken);
+        return media is null ? NotFound() : File(media.Content, media.ContentType);
+    }
+
     [HttpPost("{id:guid}/approval")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -201,11 +312,12 @@ public sealed class RunsController : ControllerBase
 
         if (request.Decision == GateDecision.Regenerate)
         {
-            // Hard per-run bound (DL-036): count prior regenerate decisions (RLS-scoped). Over the
-            // limit → block with NO graph re-entry, NO row, status unchanged.
+            // Hard per-run bound (DL-036): count prior regenerate decisions (RLS-scoped) and ask the
+            // SAME policy the review DTO surfaces whether another is allowed. Over the limit → block
+            // with NO graph re-entry, NO row, status unchanged.
             var regenCount = await _db.ApprovalActions
                 .CountAsync(a => a.AgentRunId == id && a.Action == ApprovalActionType.Regenerate, cancellationToken);
-            if (regenCount >= _regeneration.MaxPerRun)
+            if (!GateActionPolicy.Allows(GateAction.Regenerate, run.Status, regenCount, _regeneration.MaxPerRun))
             {
                 return Conflict(new { error = $"Regenerate limit reached ({_regeneration.MaxPerRun}) for this run." });
             }
@@ -292,7 +404,8 @@ public sealed class RunsController : ControllerBase
             return NotFound();
         }
 
-        if (run.Status != RunStatus.Scheduled)
+        // Cancel is legal only on a Scheduled run (DL-037) — the same rule the review DTO surfaces.
+        if (!GateActionPolicy.Allows(GateAction.Cancel, run.Status, regenerateCount: 0, maxRegenerate: 0))
         {
             return Conflict(new { error = $"Run is in status {run.Status}; only a Scheduled run can be cancelled." });
         }

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Backend.Core.Integrations;
 
 /// <summary>
@@ -6,6 +8,7 @@ namespace Backend.Core.Integrations;
 /// it. The mock ignores the distinction; <c>LiveMetaIntegration</c> would pick the Graph API
 /// container type from it.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PostSurface
 {
     FeedImage,

@@ -66,6 +66,36 @@ public sealed class MinioStorage : IStorageService
         }
     }
 
+    public async Task<StorageObject?> GetAsync(string key, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Stat for the content type, then stream the object into memory (the asset is one small
+            // image — no need for a streaming response). Returns null when the key is absent.
+            var stat = await _client.StatObjectAsync(
+                new StatObjectArgs().WithBucket(_bucket).WithObject(key),
+                cancellationToken).ConfigureAwait(false);
+
+            using var buffer = new MemoryStream();
+            await _client.GetObjectAsync(
+                new GetObjectArgs()
+                    .WithBucket(_bucket)
+                    .WithObject(key)
+                    .WithCallbackStream(stream => stream.CopyTo(buffer)),
+                cancellationToken).ConfigureAwait(false);
+
+            return new StorageObject(buffer.ToArray(), stat.ContentType);
+        }
+        catch (ObjectNotFoundException)
+        {
+            return null;
+        }
+        catch (BucketNotFoundException)
+        {
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<string>> ListAsync(
         string prefix,
         CancellationToken cancellationToken = default)

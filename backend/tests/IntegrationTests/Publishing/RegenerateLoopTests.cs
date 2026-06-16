@@ -2,6 +2,7 @@ using Backend.Api.Controllers;
 using Backend.Api.Dtos;
 using Backend.Core.Domain;
 using Backend.Core.Orchestration;
+using Backend.Core.Storage;
 using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.IntegrationTests.Durability;
@@ -25,6 +26,7 @@ namespace Backend.IntegrationTests.Publishing;
 public sealed class RegenerateLoopTests
 {
     private static readonly IOptions<RegenerationOptions> _maxThree = Options.Create(new RegenerationOptions { MaxPerRun = 3 });
+    private static readonly IStorageService _storage = new InMemoryStorageService();
 
     private readonly DurabilityFixture _fixture;
 
@@ -39,7 +41,7 @@ public sealed class RegenerateLoopTests
         var (db, scope, brandContext) = _fixture.CreateGateDeps(_fixture.BrandA);
         await using (db)
         {
-            var controller = new RunsController(db, scope, brandContext, jobs, _maxThree);
+            var controller = new RunsController(db, scope, brandContext, jobs, _storage, _maxThree);
             var result = await controller.Approval(
                 runId,
                 new ApprovalRequest(GateDecision.Regenerate, null, null, "punchier please", RegenerateModes.SameAngle),
@@ -65,7 +67,7 @@ public sealed class RegenerateLoopTests
         var (db, scope, brandContext) = _fixture.CreateGateDeps(_fixture.BrandA);
         await using (db)
         {
-            var controller = new RunsController(db, scope, brandContext, jobs, maxTwo);
+            var controller = new RunsController(db, scope, brandContext, jobs, _storage, maxTwo);
             var result = await controller.Approval(
                 runId,
                 new ApprovalRequest(GateDecision.Regenerate, null, null, null, RegenerateModes.SameAngle),
@@ -124,7 +126,7 @@ public sealed class RegenerateLoopTests
         var (gdb, gscope, gbrand) = _fixture.CreateGateDeps(_fixture.BrandA);
         await using (gdb)
         {
-            var controller = new RunsController(gdb, gscope, gbrand, new RecordingBackgroundJobClient(), _maxThree);
+            var controller = new RunsController(gdb, gscope, gbrand, new RecordingBackgroundJobClient(), _storage, _maxThree);
             await controller.Approval(runId, new ApprovalRequest(GateDecision.Approve, null, null, null), default);
         }
 
@@ -159,7 +161,7 @@ public sealed class RegenerateLoopTests
         var (gdb, gscope, gbrand) = _fixture.CreateGateDeps(_fixture.BrandA);
         await using (gdb)
         {
-            var controller = new RunsController(gdb, gscope, gbrand, new RecordingBackgroundJobClient(), _maxThree);
+            var controller = new RunsController(gdb, gscope, gbrand, new RecordingBackgroundJobClient(), _storage, _maxThree);
             await controller.Approval(
                 runId, new ApprovalRequest(GateDecision.Regenerate, null, null, null, wireMode), default);
         }

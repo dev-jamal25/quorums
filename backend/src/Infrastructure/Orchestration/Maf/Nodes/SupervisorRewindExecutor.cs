@@ -24,6 +24,9 @@ public sealed class SupervisorRewindExecutor : Executor<RunState, RunState>
     public override ValueTask<RunState> HandleAsync(
         RunState message, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
+        // COUPLED to AssemblyMerge.Combine's `a.Caption ?? b.Caption` fold: clearing these downstream
+        // slices is what makes the re-run's fresh outputs win. If a slice is added to the fold there,
+        // clear it here too — otherwise a stale value would survive a regenerate. (See AssemblyMerge.)
         var rewound = message with
         {
             Phase = GraphPhase.Creative,
@@ -54,15 +57,10 @@ public sealed class SupervisorRewindExecutor : Executor<RunState, RunState>
             return state.Strategy;
         }
 
-        var current = -1;
-        for (var i = 0; i < candidates.Count; i++)
-        {
-            if (candidates[i] == state.Strategy)
-            {
-                current = i;
-                break;
-            }
-        }
+        // Match by distinguishing fields, NOT record `==`: ContentStrategy's synthesized equality
+        // recurses into Grounding's by-reference ChunkIdsUsed list, so the selected strategy is never
+        // `==` to its banked twin after the checkpoint JSON round-trip (StrategySelection owns this).
+        var current = StrategySelection.IndexOf(candidates, state.Strategy);
 
         var next = ((current < 0 ? 0 : current) + 1) % candidates.Count;
         return candidates[next];

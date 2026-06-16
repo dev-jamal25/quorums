@@ -28,7 +28,10 @@ internal static class AssemblyMerge
 
     private static RunState Combine(RunState a, RunState b)
     {
-        // Disjoint ownership: exactly one branch carries the Caption, the other the Media.
+        // Disjoint ownership: exactly one branch carries the Caption, the other the Media. The `??`
+        // fold is order-independent ONLY because stale values are null on entry — on a regenerate that
+        // is SupervisorRewindExecutor's job (it clears Caption/Media/Draft before the CD→Media re-run).
+        // Add a slice to this fold and you must clear it there too, or a regenerate keeps stale content.
         var caption = a.Caption ?? b.Caption;
         var media = a.Media ?? b.Media;
 

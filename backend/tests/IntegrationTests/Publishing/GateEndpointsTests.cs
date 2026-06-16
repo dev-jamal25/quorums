@@ -1,6 +1,7 @@
 using Backend.Api.Controllers;
 using Backend.Api.Dtos;
 using Backend.Core.Domain;
+using Backend.Core.Storage;
 using Backend.Infrastructure.Configuration.Options;
 using Backend.IntegrationTests.Durability;
 using Backend.IntegrationTests.Support;
@@ -24,6 +25,7 @@ public sealed class GateEndpointsTests
 {
     private static readonly string[] _editedHashtags = ["#edited"];
     private static readonly IOptions<RegenerationOptions> _regen = Options.Create(new RegenerationOptions { MaxPerRun = 3 });
+    private static readonly IStorageService _storage = new InMemoryStorageService();
 
     private readonly DurabilityFixture _fixture;
 
@@ -38,7 +40,7 @@ public sealed class GateEndpointsTests
         var (db, scope, brandContext) = _fixture.CreateGateDeps(_fixture.BrandA);
         await using (db)
         {
-            var controller = new RunsController(db, scope, brandContext, jobs, _regen);
+            var controller = new RunsController(db, scope, brandContext, jobs, _storage, _regen);
             var result = await controller.Approval(
                 runId, new ApprovalRequest(GateDecision.Reject, null, null, "off-brand"), default);
             Assert.IsType<OkResult>(result);
@@ -63,7 +65,7 @@ public sealed class GateEndpointsTests
         var (db, scope, brandContext) = _fixture.CreateGateDeps(_fixture.BrandA);
         await using (db)
         {
-            var controller = new RunsController(db, scope, brandContext, jobs, _regen);
+            var controller = new RunsController(db, scope, brandContext, jobs, _storage, _regen);
             var request = new ApprovalRequest(
                 GateDecision.Approve, new ApprovalEdits("edited caption", _editedHashtags), null, null);
             var result = await controller.Approval(runId, request, default);
@@ -98,7 +100,7 @@ public sealed class GateEndpointsTests
         var (db, scope, brandContext) = _fixture.CreateGateDeps(_fixture.BrandA);
         await using (db)
         {
-            var controller = new RunsController(db, scope, brandContext, jobs, _regen);
+            var controller = new RunsController(db, scope, brandContext, jobs, _storage, _regen);
             var request = new ApprovalRequest(
                 GateDecision.Approve, null, DateTimeOffset.UtcNow.AddHours(2), null);
             var result = await controller.Approval(runId, request, default);
@@ -124,7 +126,7 @@ public sealed class GateEndpointsTests
         var (db, scope, brandContext) = _fixture.CreateGateDeps(_fixture.BrandA);
         await using (db)
         {
-            var controller = new RunsController(db, scope, brandContext, jobs, _regen);
+            var controller = new RunsController(db, scope, brandContext, jobs, _storage, _regen);
             await controller.Approval(
                 runId, new ApprovalRequest(GateDecision.Approve, null, DateTimeOffset.UtcNow.AddHours(2), null), default);
             var cancelResult = await controller.Cancel(runId, new CancelRequest("changed my mind"), default);
@@ -147,7 +149,7 @@ public sealed class GateEndpointsTests
         var (db, scope, brandContext) = _fixture.CreateGateDeps(_fixture.BrandA);
         await using (db)
         {
-            var controller = new RunsController(db, scope, brandContext, jobs, _regen);
+            var controller = new RunsController(db, scope, brandContext, jobs, _storage, _regen);
             var result = await controller.Cancel(runId, new CancelRequest(null), default);
             Assert.IsType<ConflictObjectResult>(result);
         }
