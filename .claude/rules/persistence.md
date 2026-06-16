@@ -1,21 +1,23 @@
 ---
 paths:
+  - "backend/src/Core/Domain/**/*.cs"
   - "backend/src/Infrastructure/Persistence/**/*.cs"
 ---
 
 # Persistence, Audit & RLS
 
-<!-- Loads when Claude touches the EF persistence layer (entities, configurations, migrations).
-     SCOPE NOTE: adjust the path glob above to wherever EF entities/migrations actually live.
-     If infrastructure.md already owns the RLS-in-migration convention, fold the RLS section
-     below into it and drop this file. -->
+<!-- Loads when Claude edits a brand-scoped entity (Core/Domain) or the EF persistence layer
+     (AppDbContext + its OnModelCreating config, Persistence/Migrations). Entity configuration is
+     inline in AppDbContext.OnModelCreating — there are no separate IEntityTypeConfiguration
+     classes. The RLS-in-migration convention is owned by migrations.md and is NOT restated here. -->
 
 ## Audit is durable and append-only
 - `ApprovalAction` (human gate actions) and `PublishRecord` (publish outcomes) are append-only business records. Never UPDATE a row; a correction is a new row. The gate is re-entrant, so a run may have multiple `ApprovalAction` rows.
 - The human edit overlay (`EditedCaption` / `EditedHashtags`) lives on `ApprovalAction`, NEVER on `RunState.Draft`.
 
 ## Audit is RLS-scoped
-- `ApprovalAction` and `PublishRecord` are brand-scoped. Ship the RLS policy in the SAME EF migration that creates each table (`migrationBuilder.Sql(...)`), scoped by `app.current_brand`, exactly like every other brand-scoped table (ENABLE + FORCE). The `Category=Isolation` two-brand test MUST cover audit reads — zero cross-brand leakage.
+- `ApprovalAction` and `PublishRecord` are brand-scoped, like every other brand-scoped table. The RLS policy convention itself — ENABLE + FORCE, shipped in the table's creating migration via `migrationBuilder.Sql(...)` — is owned by `migrations.md` ("RLS travels with the table"); runtime scoping by the `app.current_brand` GUC is owned by `infrastructure.md`. Do not restate it here.
+- Audit-specific: the `Category=Isolation` two-brand test MUST cover audit reads (`ApprovalAction`, `PublishRecord`) — zero cross-brand leakage.
 
 ## Audit is independent of tracing
 - Audit writes go straight to Postgres and are NEVER gated by Langfuse / `ITrace`. Tracing is optional observability (may fall back to local or be absent); the audit must always persist. Do not route an approval/publish record through the trace.
