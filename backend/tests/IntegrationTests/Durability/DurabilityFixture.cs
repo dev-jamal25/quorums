@@ -118,6 +118,17 @@ public sealed class DurabilityFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>The regenerate re-entry job over a brand-scoped, RLS-bound context (DL-036).</summary>
+    public (AppDbContext Db, RegenerateRunJob Job) CreateRegenerateRunJob(Guid brandId)
+    {
+        var db = CreateAppDbContext();
+        var brandContext = new BrandContext();
+        brandContext.Bind(brandId);
+        var scope = new BrandScope(db, brandContext);
+        var orchestrator = TestGeneration.Orchestrator(TestGeneration.Deps());
+        return (db, new RegenerateRunJob(db, scope, brandContext, orchestrator));
+    }
+
     public (AppDbContext Db, ResumeRunJob Job) CreateResumeRunJob(Guid brandId)
         => CreateResumeRunJob(brandId, new MockMetaIntegration());
 

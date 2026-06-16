@@ -3,11 +3,13 @@ using Backend.Api.Dtos;
 using Backend.Core.Domain;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
+using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Persistence;
 using Hangfire;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Api.Controllers;
 
@@ -19,17 +21,20 @@ public sealed class RunsController : ControllerBase
     private readonly IBrandScope _scope;
     private readonly IBrandContext _brandContext;
     private readonly IBackgroundJobClient _jobs;
+    private readonly RegenerationOptions _regeneration;
 
     public RunsController(
         AppDbContext db,
         IBrandScope scope,
         IBrandContext brandContext,
-        IBackgroundJobClient jobs)
+        IBackgroundJobClient jobs,
+        IOptions<RegenerationOptions> regeneration)
     {
         _db = db;
         _scope = scope;
         _brandContext = brandContext;
         _jobs = jobs;
+        _regeneration = regeneration.Value;
     }
 
     [HttpPost]
@@ -180,7 +185,7 @@ public sealed class RunsController : ControllerBase
 
         if (run.Status != RunStatus.AwaitingApproval)
         {
-            return Conflict(new { error = $"Run is in status {run.Status} and cannot be approved or rejected." });
+            return Conflict(new { error = $"Run is in status {run.Status}; the gate requires AwaitingApproval." });
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -191,6 +196,34 @@ public sealed class RunsController : ControllerBase
             run.TransitionTo(RunStatus.Rejected, now);
             await _db.SaveChangesAsync(cancellationToken);
             await handle.CompleteAsync(cancellationToken);
+            return Ok();
+        }
+
+        if (request.Decision == GateDecision.Regenerate)
+        {
+            // Hard per-run bound (DL-036): count prior regenerate decisions (RLS-scoped). Over the
+            // limit → block with NO graph re-entry, NO row, status unchanged.
+            var regenCount = await _db.ApprovalActions
+                .CountAsync(a => a.AgentRunId == id && a.Action == ApprovalActionType.Regenerate, cancellationToken);
+            if (regenCount >= _regeneration.MaxPerRun)
+            {
+                return Conflict(new { error = $"Regenerate limit reached ({_regeneration.MaxPerRun}) for this run." });
+            }
+
+            // The validator guarantees Mode is present and one of the kebab values.
+            var mode = request.Mode == RegenerateModes.ReselectAngle
+                ? RegenerateMode.ReselectAngle
+                : RegenerateMode.SameAngle;
+
+            var regenerate = NewAction(id, brandId, ApprovalActionType.Regenerate, now, reason: request.Reason);
+            regenerate.RegenerateMode = request.Mode;
+            _db.ApprovalActions.Add(regenerate);
+
+            run.TransitionTo(RunStatus.Running, now); // the AwaitingApproval → Running back-edge (DL-036)
+            await _db.SaveChangesAsync(cancellationToken);
+            await handle.CompleteAsync(cancellationToken);
+
+            _jobs.Enqueue<RegenerateRunJob>(job => job.ExecuteAsync(id, brandId, mode, CancellationToken.None));
             return Ok();
         }
 

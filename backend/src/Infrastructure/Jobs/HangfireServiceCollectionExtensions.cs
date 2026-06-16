@@ -24,6 +24,7 @@ public static class HangfireServiceCollectionExtensions
 
         services.AddScoped<ExecuteRunJob>();
         services.AddScoped<ResumeRunJob>();
+        services.AddScoped<RegenerateRunJob>();
         services.AddScoped<IngestKnowledgeDocJob>();
 
         return services;

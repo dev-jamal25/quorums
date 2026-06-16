@@ -32,5 +32,12 @@ public sealed class ApprovalRequestValidator : AbstractValidator<ApprovalRequest
             .Must(scheduledFor => scheduledFor is null || scheduledFor.Value > DateTimeOffset.UtcNow)
             .WithMessage("scheduledFor must be in the future (UTC).")
             .When(r => r.Decision == GateDecision.Approve);
+
+        // Regenerate requires a mode (DL-036). The per-run regen bound is enforced in the endpoint
+        // (a DB count), not here.
+        RuleFor(r => r.Mode)
+            .Must(mode => mode is not null && RegenerateModes.All.Contains(mode, StringComparer.Ordinal))
+            .WithMessage($"mode is required for regenerate and must be one of: {string.Join(", ", RegenerateModes.All)}.")
+            .When(r => r.Decision == GateDecision.Regenerate);
     }
 }

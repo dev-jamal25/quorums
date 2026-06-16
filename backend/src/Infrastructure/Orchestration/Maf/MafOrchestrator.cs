@@ -44,6 +44,14 @@ public sealed class MafOrchestrator : IOrchestrator
             GenerationWorkflowFactory.TerminalId,
             cancellationToken);
 
+    public Task<RunState> RunRegenerateAsync(
+        RunState state, RegenerateMode mode, CancellationToken cancellationToken = default)
+        => MafWorkflowRunner.RunToOutputAsync(
+            RegenerateWorkflowFactory.Build(_gen, mode),
+            state,
+            RegenerateWorkflowFactory.TerminalId,
+            cancellationToken);
+
     public Task<RunState> RunPublishAsync(RunState state, CancellationToken cancellationToken = default)
         => MafWorkflowRunner.RunToOutputAsync(
             PublishWorkflowFactory.Build(_coordinator, _db, _scope, _gen.Constraints, _secrets, _gen.Trace),

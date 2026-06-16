@@ -72,4 +72,30 @@ public sealed class ApprovalRequestValidatorTests
 
         Assert.True(_validator.Validate(request).IsValid);
     }
+
+    [Fact]
+    public void Regenerate_without_mode_is_invalid()
+    {
+        var request = new ApprovalRequest(GateDecision.Regenerate, Edits: null, ScheduledFor: null, Reason: "meh", Mode: null);
+
+        Assert.False(_validator.Validate(request).IsValid);
+    }
+
+    [Fact]
+    public void Regenerate_with_unknown_mode_is_invalid()
+    {
+        var request = new ApprovalRequest(GateDecision.Regenerate, Edits: null, ScheduledFor: null, Reason: null, Mode: "sideways");
+
+        Assert.False(_validator.Validate(request).IsValid);
+    }
+
+    [Theory]
+    [InlineData(RegenerateModes.SameAngle)]
+    [InlineData(RegenerateModes.ReselectAngle)]
+    public void Regenerate_with_valid_mode_is_valid(string mode)
+    {
+        var request = new ApprovalRequest(GateDecision.Regenerate, Edits: null, ScheduledFor: null, Reason: null, Mode: mode);
+
+        Assert.True(_validator.Validate(request).IsValid);
+    }
 }
