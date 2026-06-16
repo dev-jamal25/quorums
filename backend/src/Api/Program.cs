@@ -31,7 +31,10 @@ builder.Services.AddSecrets(builder.Configuration);
 builder.Services.AddDataAccess();
 builder.Services.AddOnboarding();
 builder.Services.AddKnowledge(builder.Configuration);
-builder.Services.AddHangfireJobStore(builder.Configuration);
+// Api uses the Hangfire store but does NOT install its schema — the Worker is the sole installer
+// (single-authority, avoids the concurrent CREATE SCHEMA race). The api's depends_on waits on the
+// worker's schema-readiness healthcheck, so the schema exists before the api touches the store.
+builder.Services.AddHangfireJobStore(builder.Configuration, installSchema: false);
 builder.Services.AddStorage();
 builder.Services.AddMetaIntegration();
 builder.Services.AddTracing(builder.Configuration);

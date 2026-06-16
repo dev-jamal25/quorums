@@ -21,7 +21,9 @@ builder.Services.AddValidatedAppOptions(builder.Configuration);
 builder.Services.AddSecrets(builder.Configuration);
 builder.Services.AddDataAccess();
 builder.Services.AddKnowledge(builder.Configuration);
-builder.Services.AddHangfireJobStore(builder.Configuration);
+// The Worker is the SOLE Hangfire schema installer (the api uses-but-does-not-install), so the
+// concurrent CREATE SCHEMA "hangfire" race cannot occur.
+builder.Services.AddHangfireJobStore(builder.Configuration, installSchema: true);
 builder.Services.AddHangfireWorker();
 builder.Services.AddStorage();
 builder.Services.AddMetaIntegration();
@@ -30,5 +32,13 @@ builder.Services.AddGeneration(builder.Configuration);
 builder.Services.AddOrchestration();
 
 var host = builder.Build();
+
+// Schema-readiness sentinel for the api's depends_on healthcheck. By ApplicationStarted the Hangfire
+// server has started, which means PostgreSqlObjectsInstaller has created the hangfire schema + tables
+// (installSchema: true above). Dropping this file is the signal the compose healthcheck tests, so the
+// api is only released once the schema actually exists.
+var readinessFile = Path.Combine(Path.GetTempPath(), "hangfire-ready");
+host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStarted.Register(() =>
+    File.WriteAllText(readinessFile, DateTimeOffset.UtcNow.ToString("O")));
 
 host.Run();

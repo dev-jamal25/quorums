@@ -13,6 +13,7 @@ services:
     environment:
       Vault__Enabled: "false"
     env_file: [.env]
+    restart: unless-stopped
     ports:
       - "8080:8080"
     extra_hosts:
@@ -30,6 +31,10 @@ services:
         condition: service_healthy
       tei-rerank:
         condition: service_healthy
+      # The Worker is the sole Hangfire-schema installer; wait until its schema-readiness
+      # healthcheck passes so the api never touches the store before the schema exists.
+      worker:
+        condition: service_healthy
 
   worker:
     build:
@@ -41,6 +46,7 @@ services:
       Vault__Enabled: "false"
     command: ["Backend.Worker.dll"]
     env_file: [.env]
+    restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -56,6 +62,15 @@ services:
         condition: service_healthy
       tei-rerank:
         condition: service_healthy
+    # Reflects Hangfire schema readiness: the worker drops /tmp/hangfire-ready once its host has
+    # started (PostgreSqlObjectsInstaller has created the hangfire schema + tables). The api's
+    # depends_on gates on this, so schema install happens in exactly one place, before the api uses it.
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/hangfire-ready || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 60s
 
   frontend:
     build:
