@@ -16,7 +16,12 @@ Bounded, documented - an in-flight parallel cost can't be reconciled before it f
 R3 · Budget single-writer (refines DL-020). Only the Supervisor writes RunState.Budget,
 reconciled at the join via slice-1's existing fan-in merge. Parallel nodes RETURN their
 incurred cost in their output; the Media node only READS for its gate. No second writer;
-do not invent a new merge.
+do not invent a new merge. Timing: the sequential pre-fork nodes (Strategist -> selection
+-> CD) each append their incurred cost (RunState.IncurredCosts) as each completes, so the
+Media gate's fork-time snapshot - the sum of those - already reflects all pre-fork spend;
+Budget itself is written once, at the join. That ordering is what makes the R2 gate
+snapshot meaningful (pre-fork spend is reconciled into the snapshot before the gate reads
+it; only the in-flight parallel Copywriting spend is excluded, per R2's accepted bound).
 
 R4 · Structured-output seam + fallback hierarchy (refines DL-028/032). Schema is
 GENERATED from the canonical C# record (JsonSchemaExporter on .NET 10, or Extensions.AI
