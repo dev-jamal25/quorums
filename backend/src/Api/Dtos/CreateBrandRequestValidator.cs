@@ -36,6 +36,11 @@ public sealed partial class CreateBrandRequestValidator : AbstractValidator<Crea
         RuleFor(request => request.ToneDescriptors).NotEmpty();
         RuleForEach(request => request.ToneDescriptors).NotEmpty();
 
+        // Content pillars are the validation contract for the Content Strategist (DL-034 R7):
+        // at least one non-blank pillar, else the pillar check has nothing to validate against.
+        RuleFor(request => request.ContentPillars).NotEmpty();
+        RuleForEach(request => request.ContentPillars).NotEmpty();
+
         RuleFor(request => request.AudienceSegments).NotEmpty();
         RuleForEach(request => request.AudienceSegments).NotEmpty();
 

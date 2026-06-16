@@ -65,6 +65,7 @@ internal sealed class BrandOnboardingService : IBrandOnboardingService
             VoiceDont = [.. command.VoiceDont],
             ColorHexes = [.. command.ColorHexes],
             ImageryStyle = command.ImageryStyle,
+            ContentPillars = [.. command.ContentPillars],
             AudienceSegments = [.. command.AudienceSegments],
             AudiencePainPoints = [.. command.AudiencePainPoints],
             ProductContext = command.ProductContext,

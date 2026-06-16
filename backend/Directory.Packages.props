@@ -18,6 +18,9 @@
     <PackageVersion Include="AspNetCore.HealthChecks.Uris" Version="8.0.1" />
     <PackageVersion Include="FluentValidation.AspNetCore" Version="11.3.0" />
     <PackageVersion Include="Polly.Extensions.Http" Version="3.0.0" />
+    <!-- AddPolicyHandler on IHttpClientBuilder (Polly v7 integration); pairs with
+         Polly.Extensions.Http for the Gemini media client's transient/429 retry (P3). -->
+    <PackageVersion Include="Microsoft.Extensions.Http.Polly" Version="10.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.2" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.2" />
     <!-- Pinned directly so transitive pinning unifies EF Core on 9.0.2 everywhere:

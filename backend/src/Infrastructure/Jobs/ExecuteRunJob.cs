@@ -52,6 +52,12 @@ public sealed class ExecuteRunJob
         run.Status = RunStatus.Running;
         run.UpdatedAt = now;
 
+        // The brand's structured pillars (the Strategist's validation contract, R7) and the run's
+        // target surface (the aspect-ratio stamp + Copywriting/Media constraints) are readable run
+        // inputs. The profile read is RLS-scoped (no manual brand WHERE).
+        var profile = await _db.BrandProfiles.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        IReadOnlyList<string> pillars = profile?.ContentPillars ?? [];
+
         var state = new RunState(
             RunId: runId,
             BrandId: brandId,
@@ -65,7 +71,12 @@ public sealed class ExecuteRunJob
             Publish: null,
             Budget: new Budget(TokenBudget: 10_000, TokensSpent: 0, MediaBudget: 1.00m, MediaSpent: 0m),
             Errors: [],
-            Trace: new TraceRefs(TraceId: string.Empty, SpanIds: [], Spans: []));
+            Trace: new TraceRefs(TraceId: string.Empty, SpanIds: [], Spans: []),
+            TargetSurface: "instagram_feed",
+            ContentPillars: pillars,
+            Candidates: null,
+            IncurredCosts: [],
+            FatalError: null);
 
         state = await _orchestrator.RunGenerationAsync(state, cancellationToken);
 
@@ -89,7 +100,10 @@ public sealed class ExecuteRunJob
             });
         }
 
-        run.Status = RunStatus.AwaitingApproval;
+        // A fatal node failure (Strategist/CD/selection exhaustion, global ceiling, Gemini fail) fails
+        // the run; otherwise it reaches the human gate. The checkpoint is written either way so the
+        // trace and errors are visible (DL-022/023).
+        run.Status = state.FatalError is not null ? RunStatus.Failed : RunStatus.AwaitingApproval;
         run.UpdatedAt = now;
 
         await _db.SaveChangesAsync(cancellationToken);

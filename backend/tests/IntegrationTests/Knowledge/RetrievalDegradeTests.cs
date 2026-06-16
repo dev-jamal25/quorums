@@ -1,3 +1,4 @@
+using Backend.Core.Domain;
 using Backend.Core.Knowledge;
 using Backend.Infrastructure.Configuration.Options;
 using Xunit;
@@ -37,7 +38,7 @@ public sealed class RetrievalDegradeTests
         {
             await using var handle = await scope.BeginAsync();
 
-            var result = await retrieval.Retrieve(_fixture.BrandAProductQuery, _fixture.BrandA, docType: "Product", k: 3);
+            var result = await retrieval.Retrieve(_fixture.BrandAProductQuery, _fixture.BrandA, docType: DocType.Product, k: 3);
 
             Assert.NotEmpty(result.Chunks);                  // recall-order fallback, no crash
             Assert.NotNull(result.Error);
@@ -54,7 +55,7 @@ public sealed class RetrievalDegradeTests
         {
             await using var handle = await scope.BeginAsync();
 
-            var result = await retrieval.Retrieve(_fixture.BrandAProductQuery, _fixture.BrandA, docType: "Product", k: 3);
+            var result = await retrieval.Retrieve(_fixture.BrandAProductQuery, _fixture.BrandA, docType: DocType.Product, k: 3);
 
             Assert.NotEmpty(result.Chunks);                  // ran on the single original query, no crash
             Assert.NotNull(result.Error);

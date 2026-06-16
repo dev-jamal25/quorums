@@ -1,3 +1,4 @@
+using Backend.Core.Domain;
 using Backend.Core.Knowledge;
 using Backend.Infrastructure.Configuration.Options;
 using Xunit;
@@ -39,7 +40,7 @@ public sealed class MarketIntelRecencyTests
             await using var handle = await scope.BeginAsync();
 
             // docType is the EF enum-name ("MarketIntel"), matching slice-2's Enum.Parse; "market_intel" would throw.
-            var result = await retrieval.Retrieve("specialty single origin trend", _fixture.BrandA, docType: "MarketIntel", k: 2);
+            var result = await retrieval.Retrieve("specialty single origin trend", _fixture.BrandA, docType: DocType.MarketIntel, k: 2);
 
             Assert.Equal(_fixture.MarketIntelFreshChunkId, result.Chunks[0].ChunkId);   // 2026 intel beats 2024
         }

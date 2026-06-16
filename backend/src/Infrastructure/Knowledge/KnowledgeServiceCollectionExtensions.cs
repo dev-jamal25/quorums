@@ -1,11 +1,7 @@
-using Anthropic.SDK;
 using Backend.Core.Knowledge;
-using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Knowledge.Seed;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Backend.Infrastructure.Knowledge;
 
@@ -66,14 +62,9 @@ public static class KnowledgeServiceCollectionExtensions
         }
         else
         {
-            // The single Claude-call path (item 6): an Anthropic-backed Microsoft.Extensions.AI
-            // IChatClient. ApiKey from AnthropicOptions (Vault/secret); the model id is config-bound
-            // on the call (ChatOptions.ModelId). AnthropicClient.Messages implements IChatClient.
-            services.AddSingleton<IChatClient>(sp =>
-            {
-                var apiKey = sp.GetRequiredService<IOptions<AnthropicOptions>>().Value.ApiKey;
-                return new AnthropicClient(apiKey).Messages;
-            });
+            // The query-transformer consumes the single IChatClient registered by AddGeneration
+            // (chat-mode gated; the SDK type stays in Infrastructure, DL-032). The model id is
+            // config-bound per call (ChatOptions.ModelId).
             services.AddSingleton<IQueryTransformer, ChatQueryTransformer>();
         }
 

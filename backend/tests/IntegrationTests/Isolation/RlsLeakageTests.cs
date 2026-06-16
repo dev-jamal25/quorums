@@ -31,6 +31,10 @@ public sealed class RlsLeakageTests : IClassFixture<RlsLeakageFixture>
             Assert.NotEmpty(profiles);
             Assert.All(profiles, profile => Assert.Equal(_fixture.BrandA, profile.BrandId));
 
+            // The new brand-scoped column (DL-034 R7) rides the same policy: Brand A sees only
+            // its own pillars, never Brand B's. Covers ContentPillars under Category=Isolation.
+            Assert.All(profiles, profile => Assert.Equal(["Origin", "Craft", "Ritual"], profile.ContentPillars));
+
             // A second table proves it is the policy, not a one-off.
             var runs = await db.AgentRuns.AsNoTracking().ToListAsync();
             Assert.NotEmpty(runs);

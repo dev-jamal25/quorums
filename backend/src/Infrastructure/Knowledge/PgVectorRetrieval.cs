@@ -41,7 +41,7 @@ public sealed class PgVectorRetrieval : IRetrievalService
         _options = options.Value;
     }
 
-    public async Task<RetrievalResult> Retrieve(string query, Guid brandId, string? docType, int k)
+    public async Task<RetrievalResult> Retrieve(string query, Guid brandId, DocType? docType, int k)
     {
         var topK = k > 0 ? k : _options.FinalK;
         try
@@ -91,7 +91,7 @@ public sealed class PgVectorRetrieval : IRetrievalService
     // S1 — recall = dense ∪ sparse. Each arm yields a rank-ordered list; the union is deduped by
     // chunk id and the per-arm ranks are fused with RRF (k≈60). The RRF score is the rerank-OFF
     // ordering; when rerank is ON it is ignored (the cross-encoder is the ranking authority).
-    private async Task<List<Candidate>> RecallAsync(IReadOnlyList<string> variants, string? docType, int n)
+    private async Task<List<Candidate>> RecallAsync(IReadOnlyList<string> variants, DocType? docType, int n)
     {
         var byId = new Dictionary<Guid, Candidate>();
         var rankedLists = new List<IReadOnlyList<Guid>>();
@@ -127,15 +127,16 @@ public sealed class PgVectorRetrieval : IRetrievalService
 
     // Dense arm — pgvector cosine, returned in rank order (nearest first); the position is the rank
     // RRF consumes. Brand scope is RLS (the bound BrandScope) — NEVER a hand-written WHERE brand_id.
-    private async Task<List<Candidate>> DenseArmAsync(string variant, string? docType, int n)
+    private async Task<List<Candidate>> DenseArmAsync(string variant, DocType? docType, int n)
     {
         var queryVector = new Vector(await _embeddings.EmbedQueryAsync(variant).ConfigureAwait(false));
 
         IQueryable<KnowledgeChunk> q = _db.KnowledgeChunks.AsNoTracking().Where(c => c.Embedding != null);
-        if (docType is not null)
+        if (docType is DocType dt)
         {
-            var parsed = Enum.Parse<DocType>(docType, ignoreCase: true);
-            q = q.Where(c => c.DocType == parsed);   // explicit content filter, not isolation
+            // EF translates the enum compare through the existing HasConversion<string>() converter —
+            // no magic string, no PascalCase hand-written into SQL.
+            q = q.Where(c => c.DocType == dt);   // explicit content filter, not isolation
         }
 
         var hits = await q
@@ -161,7 +162,7 @@ public sealed class PgVectorRetrieval : IRetrievalService
     // Sparse arm — Postgres FTS over the unmapped generated search_vector, returned in ts_rank order
     // (the rank RRF consumes). Read-only raw SQL on the BrandScope-bound connection → RLS scopes it
     // (carve-out in .claude/rules/infrastructure.md; never a manual WHERE brand_id).
-    private async Task<List<Candidate>> SparseArmAsync(string query, string? docType, int n)
+    private async Task<List<Candidate>> SparseArmAsync(string query, DocType? docType, int n)
     {
         const string cols =
             "SELECT id AS \"Id\", ts_rank_cd(search_vector, websearch_to_tsquery('english', {0}))::float8 AS \"Rank\" " +
@@ -170,10 +171,13 @@ public sealed class PgVectorRetrieval : IRetrievalService
             ? cols + "ORDER BY \"Rank\" DESC LIMIT {1}"
             : cols + "AND doc_type = {2} ORDER BY \"Rank\" DESC LIMIT {1}";
 
+        // The default HasConversion<string>() stores the enum member name, so DocType.ToString() IS the
+        // stored value (PascalCase) — bound as a parameter ({2}), never a literal in the SQL. (A snake_case
+        // literal here would match nothing — DL-033.)
         var hits = docType is null
             ? await _db.Database.SqlQueryRaw<FtsHit>(sql, query, n).ToListAsync().ConfigureAwait(false)
-            : await _db.Database.SqlQueryRaw<FtsHit>(sql, query, n,
-                  Enum.Parse<DocType>(docType, ignoreCase: true).ToString()).ToListAsync().ConfigureAwait(false);
+            : await _db.Database.SqlQueryRaw<FtsHit>(sql, query, n, docType.Value.ToString())
+                .ToListAsync().ConfigureAwait(false);
         if (hits.Count == 0)
         {
             return [];

@@ -220,6 +220,11 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("color_hexes");
 
+                    b.PrimitiveCollection<List<string>>("ContentPillars")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("content_pillars");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

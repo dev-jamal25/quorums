@@ -21,7 +21,9 @@ not — it is frozen in a Decision Log and you have mis-read the contract.
 
 - `System_Architecture_Foundation.md` — **DL-010** (RAG/pgvector isolation surface),
   **DL-016** (embedding model + prefixes), **DL-024** (embed + rerank runtime: TEI),
-  **DL-025** (four-stage retrieval pipeline), **DL-026** (corpus taxonomy + chunking).
+  **DL-025** (four-stage retrieval pipeline), **DL-026** (corpus taxonomy + chunking),
+  **DL-033** (`Retrieve` `docType` is a typed `DocType?`; stored `doc_type` is PascalCase,
+  not the DL-026 snake_case taxonomy — detail in `references/interfaces-and-schema.md`).
 - `Agent_Orchestration_Design.md` — **DL-017–023** (graph, contracts, failure +
   degradation; retrieval consumers and the ungrounded-degrade rule live here).
 
@@ -107,7 +109,7 @@ text). **No second datastore.** Dense (pgvector) and sparse (FTS) live in the sa
 Postgres under the same RLS (DL-025).
 
 ### Retrieval pipeline — four toggleable stages (DL-025)
-`IRetrievalService.Retrieve(query, brandId, docType?, k)` is the **stable surface**;
+`IRetrievalService.Retrieve(query, brandId, DocType?, k)` is the **stable surface**;
 the four stages are **internal** to `PgVectorRetrieval`. Each stage is
 **config-gated and independently toggleable**, and must **never crash a run** when
 disabled.
@@ -156,7 +158,7 @@ duplicates).
 
 | Interface | Implementation(s) | Notes |
 |---|---|---|
-| `IRetrievalService` | `PgVectorRetrieval` | Four-stage pipeline **internal**; `Retrieve(query, brandId, docType?, k)` is the only public surface |
+| `IRetrievalService` | `PgVectorRetrieval` | Four-stage pipeline **internal**; `Retrieve(query, brandId, DocType?, k)` is the only public surface |
 | `IEmbeddingProvider` | `NomicEmbeddingProvider` (HTTP → TEI) **+ CI mock** | Applies `search_document:` / `search_query:`; dim config-bound = pgvector dim |
 | `IRerankProvider` | `CrossEncoderRerankProvider` (HTTP → TEI) **+ CI mock** | Returns **pure** cross-encoder relevance; no metadata blend here |
 | `IQueryTransformer` | multi-query expander (Haiku) **+ CI mock** | S0; default 3 variants; config-gated |
