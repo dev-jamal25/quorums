@@ -12,6 +12,9 @@ services:
     # ASP.NET Core Web API. HTTP surface: brands, knowledge CMS, runs, approvals, assets.
     environment:
       Vault__Enabled: "false"
+      # Browser origin allowed to call the API (config-driven). The dashboard's custom X-Brand-Id
+      # header triggers a CORS preflight; this is the frontend container's host origin.
+      Cors__AllowedOrigins__0: "http://localhost:3000"
     env_file: [.env]
     restart: unless-stopped
     ports:
