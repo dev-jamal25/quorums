@@ -16,6 +16,7 @@ using Backend.Infrastructure.Knowledge;
 using Backend.Infrastructure.Onboarding;
 using Backend.Infrastructure.Orchestration;
 using Backend.Infrastructure.Persistence;
+using Backend.Infrastructure.Seed;
 using Backend.Infrastructure.Storage;
 using Backend.Infrastructure.Tracing;
 using FluentValidation;
@@ -34,6 +35,7 @@ builder.Services.AddValidatedAppOptions(builder.Configuration);
 builder.Services.AddSecrets(builder.Configuration);
 builder.Services.AddDataAccess();
 builder.Services.AddOnboarding();
+builder.Services.AddDemoSeed();
 builder.Services.AddKnowledge(builder.Configuration);
 // Api uses the Hangfire store but does NOT install its schema — the Worker is the sole installer
 // (single-authority, avoids the concurrent CREATE SCHEMA race). The api's depends_on waits on the
@@ -64,6 +66,21 @@ builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateBrandRequestValidator>();
 
 var app = builder.Build();
+
+// CLI seed mode: `dotnet Backend.Api.dll seed [--no-knowledge]`. Reuses the full host DI but runs the
+// idempotent demo seed and exits instead of serving — analogous to running migrations. Prints the
+// brand id to paste into the dashboard's Brand field.
+if (args.Contains("seed"))
+{
+    var includeKnowledge = !args.Contains("--no-knowledge");
+    var seed = await app.Services.GetRequiredService<DemoSeeder>().RunAsync(includeKnowledge);
+    Console.WriteLine();
+    Console.WriteLine($"Demo seed complete  brand_created={seed.BrandCreated}  knowledge_seeded={seed.KnowledgeSeeded}");
+    Console.WriteLine($"BRAND_ID={seed.BrandId}");
+    Console.WriteLine("Paste BRAND_ID into the dashboard's Brand field.");
+    Console.WriteLine();
+    return;
+}
 
 // CORS before the brand-context middleware so the header-less preflight is answered here and never
 // needs a brand. After routing, before the endpoints/auth — per ASP.NET Core guidance.
