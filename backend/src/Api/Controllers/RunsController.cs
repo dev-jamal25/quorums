@@ -236,6 +236,7 @@ public sealed class RunsController : ControllerBase
         }
 
         string? key;
+        string? declaredMimeType;
         await using (var handle = await _scope.BeginAsync(cancellationToken))
         {
             // Resolve the storage key from the brand's own RLS-scoped checkpoint — never a
@@ -254,7 +255,9 @@ public sealed class RunsController : ControllerBase
                 ? null
                 : JsonSerializer.Deserialize<RunState>(checkpoint.StateJson, RunStateJsonOptions.Options);
 
-            key = state?.Draft?.MediaRef?.StorageKey ?? state?.Media?.StorageKey;
+            var mediaRef = state?.Draft?.MediaRef ?? state?.Media;
+            key = mediaRef?.StorageKey;
+            declaredMimeType = mediaRef?.MimeType;
             await handle.CompleteAsync(cancellationToken);
         }
 
@@ -264,7 +267,18 @@ public sealed class RunsController : ControllerBase
         }
 
         var media = await _storage.GetAsync(key, cancellationToken);
-        return media is null ? NotFound() : File(media.Content, media.ContentType);
+        if (media is null)
+        {
+            return NotFound();
+        }
+
+        // File() throws on a null/empty content type. Prefer the stored type, fall back to the asset's
+        // declared MimeType, then a safe generic — so a stored object with no content type renders
+        // instead of throwing a 500 (which the browser would mask as a CORS error).
+        var contentType = !string.IsNullOrWhiteSpace(media.ContentType) ? media.ContentType
+            : !string.IsNullOrWhiteSpace(declaredMimeType) ? declaredMimeType
+            : "application/octet-stream";
+        return File(media.Content, contentType);
     }
 
     [HttpPost("{id:guid}/approval")]

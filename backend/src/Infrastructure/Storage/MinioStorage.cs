@@ -84,7 +84,12 @@ public sealed class MinioStorage : IStorageService
                     .WithCallbackStream(stream => stream.CopyTo(buffer)),
                 cancellationToken).ConfigureAwait(false);
 
-            return new StorageObject(buffer.ToArray(), stat.ContentType);
+            // Default from the key's extension when the stored object reports no content type, so a
+            // caller (e.g. the media proxy) never gets a null/empty type to choke on.
+            var contentType = string.IsNullOrWhiteSpace(stat.ContentType)
+                ? ContentTypeForKey(key)
+                : stat.ContentType;
+            return new StorageObject(buffer.ToArray(), contentType);
         }
         catch (ObjectNotFoundException)
         {
@@ -95,6 +100,16 @@ public sealed class MinioStorage : IStorageService
             return null;
         }
     }
+
+    private static string ContentTypeForKey(string key) =>
+        Path.GetExtension(key).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".webp" => "image/webp",
+            ".gif" => "image/gif",
+            _ => "application/octet-stream",
+        };
 
     public async Task<IReadOnlyList<string>> ListAsync(
         string prefix,

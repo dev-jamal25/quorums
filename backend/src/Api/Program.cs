@@ -67,7 +67,7 @@ var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get
 builder.Services.AddCors(options => options.AddPolicy(FrontendCorsPolicy, policy => policy
     .WithOrigins(allowedOrigins)
     .WithHeaders("X-Brand-Id", "Content-Type")
-    .WithMethods("GET", "POST")));
+    .WithMethods("GET", "POST", "OPTIONS")));
 
 // FluentValidation at the boundary: validators run on model binding and surface
 // through [ApiController] as automatic 400 ProblemDetails.
@@ -91,8 +91,16 @@ if (args.Contains("seed"))
     return;
 }
 
-// CORS before the brand-context middleware so the header-less preflight is answered here and never
-// needs a brand. After routing, before the endpoints/auth — per ASP.NET Core guidance.
+// Unhandled exceptions are re-executed through "/error" so the error response passes back through
+// UseCors below and carries the CORS headers — a real 500 then surfaces in the browser as a 500
+// instead of being masked as a CORS failure.
+app.UseExceptionHandler("/error");
+
+app.UseRouting();
+
+// CORS after routing, before the endpoints — applies to EVERY endpoint (incl. /media, /trace, the
+// review GET, the runs list, the trigger/approval/cancel POSTs) AND to error responses. The
+// header-less preflight is answered here without a brand, so it runs before the brand-context middleware.
 app.UseCors(FrontendCorsPolicy);
 
 app.UseMiddleware<BrandContextMiddleware>();
@@ -107,5 +115,9 @@ app.UseHangfireDashboard("/hangfire", new DashboardOptions
 
 app.MapDependencyHealthChecks();
 app.MapControllers();
+
+// Backs UseExceptionHandler("/error"). Re-executed through UseCors above, so the ProblemDetails 500
+// carries the CORS headers (a real failure shows as a 500, not a masked CORS error).
+app.Map("/error", () => Results.Problem());
 
 app.Run();
