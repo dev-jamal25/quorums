@@ -29,6 +29,15 @@ var builder = WebApplication.CreateBuilder(args);
 // X-Brand-Id header, which makes the browser issue an OPTIONS preflight the API must answer.
 const string FrontendCorsPolicy = "frontend";
 
+// CLI: `dotnet Backend.Api.dll vault-seed` — seed the dev-mode Vault (KV secrets + Transit key) from
+// the local config/.env, then exit. Runs BEFORE the KV loader so it works against an unseeded Vault
+// (dev mode wipes Vault on restart; this is the repeatable reseed). Never logs a secret value.
+if (args.Contains("vault-seed"))
+{
+    await VaultSeeder.RunAsync(builder.Configuration);
+    return;
+}
+
 await builder.Configuration.AddVaultKvSecretsAsync();
 
 builder.Services.AddValidatedAppOptions(builder.Configuration);

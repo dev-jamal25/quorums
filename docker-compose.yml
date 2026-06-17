@@ -10,8 +10,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     # ASP.NET Core Web API. HTTP surface: brands, knowledge CMS, runs, approvals, assets.
+    # Vault is opt-in via the env_file (Vault__Enabled in .env). Do NOT hardcode it here — a compose
+    # `environment:` value overrides env_file and would force Vault off, blocking the KV/Transit path.
     environment:
-      Vault__Enabled: "false"
       # Browser origin allowed to call the API (config-driven). The dashboard's custom X-Brand-Id
       # header triggers a CORS preflight; this is the frontend container's host origin.
       Cors__AllowedOrigins__0: "http://localhost:3000"
@@ -45,8 +46,7 @@ services:
       dockerfile: Dockerfile
     # .NET Worker Service hosting the Hangfire server. Same publish output as api
     # (zero version skew); overrides the entrypoint to run the worker assembly.
-    environment:
-      Vault__Enabled: "false"
+    # Vault is opt-in via the env_file (Vault__Enabled in .env) — not hardcoded here (see api).
     command: ["Backend.Worker.dll"]
     env_file: [.env]
     restart: unless-stopped
