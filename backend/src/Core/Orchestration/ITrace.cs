@@ -26,4 +26,25 @@ public interface ITrace
         string? errorMessage,
         string? detail = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records one LLM call as a Langfuse <em>generation</em> observation on the run's trace — the
+    /// model and the input/output token usage (which Langfuse turns into cost). Fire-and-forget by
+    /// shape: it is NOT threaded through <see cref="RunState"/> (the LLM client holds no state slice),
+    /// so it returns nothing. The local recorder no-ops it; Langfuse posts it best-effort and a failed
+    /// post never fails the run. The trace id derives from <paramref name="runId"/>, so it matches the
+    /// node spans even though the generation precedes the node's own span.
+    /// </summary>
+    Task RecordGenerationAsync(
+        Guid runId,
+        Guid brandId,
+        string name,
+        string? model,
+        long? inputTokens,
+        long? outputTokens,
+        string? input,
+        string? output,
+        DateTimeOffset startedAt,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken = default);
 }

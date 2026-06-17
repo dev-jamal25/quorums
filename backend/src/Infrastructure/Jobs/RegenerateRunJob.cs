@@ -3,6 +3,7 @@ using Backend.Core.Domain;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
 using Backend.Infrastructure.Persistence;
+using Backend.Infrastructure.Tracing;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Infrastructure.Jobs;
@@ -38,6 +39,11 @@ public sealed class RegenerateRunJob
         Guid runId, Guid brandId, RegenerateMode mode, CancellationToken cancellationToken = default)
     {
         _brandContext.Bind(brandId);
+
+        // Regenerate makes FRESH LLM calls (CD → Media), so bind the run-trace context here too — its
+        // generations attach to the same run trace, not an orphan.
+        using var traceScope = RunTraceScope.Begin(runId, brandId);
+
         await using var handle = await _scope.BeginAsync(cancellationToken);
 
         var run = await _db.AgentRuns

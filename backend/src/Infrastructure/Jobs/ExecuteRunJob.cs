@@ -3,6 +3,7 @@ using Backend.Core.Domain;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
 using Backend.Infrastructure.Persistence;
+using Backend.Infrastructure.Tracing;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Infrastructure.Jobs;
@@ -29,6 +30,11 @@ public sealed class ExecuteRunJob
     public async Task ExecuteAsync(Guid runId, Guid brandId, CancellationToken cancellationToken = default)
     {
         _brandContext.Bind(brandId);
+
+        // Bind the ambient run-trace context so every LLM call in this segment records a generation on
+        // this run's trace (the wrapping LangfuseChatClient reads it). ExecuteRun makes the LLM calls.
+        using var traceScope = RunTraceScope.Begin(runId, brandId);
+
         await using var handle = await _scope.BeginAsync(cancellationToken);
 
         var run = await _db.AgentRuns

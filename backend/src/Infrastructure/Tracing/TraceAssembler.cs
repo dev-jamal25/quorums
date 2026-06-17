@@ -3,14 +3,19 @@ using Backend.Core.Orchestration;
 namespace Backend.Infrastructure.Tracing;
 
 /// <summary>
-/// Pure assembly of the trace surface shared by both <see cref="ITrace"/> impls. The
-/// first appended span assigns the trace id; every span gets a fresh id appended to
-/// both the id list (the frozen Langfuse references) and the detail list.
+/// Pure assembly of the trace surface shared by both <see cref="ITrace"/> impls. The first appended
+/// span assigns the trace id — derived from the run id (<see cref="TraceId"/>) so it is stable across
+/// the durable seam AND so a generation emitted before the first span can compute the same id from the
+/// run id. Every span gets a fresh id appended to both the id list and the span list.
 /// </summary>
 internal static class TraceAssembler
 {
+    /// <summary>The deterministic Langfuse trace id for a run — shared by its spans and generations.</summary>
+    public static string TraceId(Guid runId) => runId.ToString("N");
+
     public static TraceRefs Append(
         TraceRefs current,
+        Guid runId,
         string node,
         string? tool,
         string status,
@@ -19,9 +24,7 @@ internal static class TraceAssembler
         string? error,
         string? detail = null)
     {
-        var traceId = string.IsNullOrEmpty(current.TraceId)
-            ? Guid.NewGuid().ToString("N")
-            : current.TraceId;
+        var traceId = string.IsNullOrEmpty(current.TraceId) ? TraceId(runId) : current.TraceId;
 
         var spanId = Guid.NewGuid().ToString("N");
         var span = new TraceSpan(spanId, node, tool, status, startedAt, endedAt, error, detail);

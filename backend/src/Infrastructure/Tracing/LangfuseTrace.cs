@@ -52,7 +52,7 @@ public sealed partial class LangfuseTrace : ITrace
         CancellationToken cancellationToken = default)
     {
         var isNewTrace = string.IsNullOrEmpty(current.TraceId);
-        var refs = TraceAssembler.Append(current, node, tool, status, startedAt, endedAt, errorMessage, detail);
+        var refs = TraceAssembler.Append(current, runId, node, tool, status, startedAt, endedAt, errorMessage, detail);
         var span = refs.Spans[^1];
 
         try
@@ -114,4 +114,51 @@ public sealed partial class LangfuseTrace : ITrace
         string.IsNullOrWhiteSpace(_options.Environment)
             ? [TraceName]
             : [TraceName, _options.Environment];
+
+    public async Task RecordGenerationAsync(
+        Guid runId,
+        Guid brandId,
+        string name,
+        string? model,
+        long? inputTokens,
+        long? outputTokens,
+        string? input,
+        string? output,
+        DateTimeOffset startedAt,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // One generation observation on the run's trace (trace id derived from the run id, so it
+            // matches the spans). model + usage let Langfuse compute cost automatically.
+            var generation = new
+            {
+                id = Guid.NewGuid().ToString("N"),
+                type = "generation-create",
+                timestamp = endedAt,
+                body = new
+                {
+                    id = Guid.NewGuid().ToString("N"),
+                    traceId = TraceAssembler.TraceId(runId),
+                    name,
+                    startTime = startedAt,
+                    endTime = endedAt,
+                    model,
+                    usage = new { input = inputTokens, output = outputTokens, unit = "TOKENS" },
+                    input = _options.MaskContent ? null : input,
+                    output = _options.MaskContent ? null : output,
+                    metadata = new { runId, brandId },
+                },
+            };
+
+            using var response = await _http
+                .PostAsJsonAsync("api/public/ingestion", new { batch = new[] { generation } }, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogSpanPostFailed(runId, ex);
+        }
+    }
 }

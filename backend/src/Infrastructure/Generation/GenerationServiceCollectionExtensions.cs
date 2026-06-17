@@ -10,6 +10,7 @@ using Backend.Core.Storage;
 using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Integrations.Gemini;
 using Backend.Infrastructure.Orchestration.Maf;
+using Backend.Infrastructure.Tracing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,15 +38,20 @@ public static class GenerationServiceCollectionExtensions
     {
         // The one Claude-call path (DL-032). mock = deterministic CI client (canned tool_use per
         // agent); live = real Anthropic. Owned here; the RAG query-transformer consumes the same client.
+        // The one Claude-call path is wrapped by LangfuseChatClient so every LLM call records a Langfuse
+        // generation (model + token usage) on the ambient run's trace — best-effort, no agent/node change.
         var chatMode = (configuration["Generation:ChatMode"] ?? "mock").Trim().ToLowerInvariant();
         if (chatMode == "live")
         {
-            services.AddSingleton<IChatClient>(sp =>
-                new AnthropicClient(sp.GetRequiredService<IOptions<AnthropicOptions>>().Value.ApiKey).Messages);
+            services.AddSingleton<IChatClient>(sp => new LangfuseChatClient(
+                new AnthropicClient(sp.GetRequiredService<IOptions<AnthropicOptions>>().Value.ApiKey).Messages,
+                sp.GetRequiredService<ITrace>()));
         }
         else
         {
-            services.AddSingleton<IChatClient>(_ => new DeterministicGenerationChatClient());
+            services.AddSingleton<IChatClient>(sp => new LangfuseChatClient(
+                new DeterministicGenerationChatClient(),
+                sp.GetRequiredService<ITrace>()));
         }
 
         services.AddSingleton<IStructuredGenerator, ForcedToolGenerator>();
