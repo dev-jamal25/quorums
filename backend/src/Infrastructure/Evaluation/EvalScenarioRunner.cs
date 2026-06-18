@@ -62,9 +62,11 @@ public sealed class EvalScenarioRunner
             var context = new SystemOutputContext(output, evalCase);
 
             var stopwatch = Stopwatch.StartNew();
+            // ScenarioName + iterationName are disk path segments (no '/', '\', or '..'): the case id is
+            // the scenario, the git sha the iteration. The dataset name/version live on the EvalRun row.
             await using (var scenarioRun = await reportingConfiguration
                 .CreateScenarioRunAsync(
-                    scenarioName: $"{dataset.Meta.Name}/{evalCase.Id}",
+                    scenarioName: evalCase.Id,
                     iterationName: metadata.GitSha,
                     cancellationToken: cancellationToken)
                 .ConfigureAwait(false))

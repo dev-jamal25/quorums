@@ -1,3 +1,4 @@
+using Backend.Core.Evaluation;
 using Backend.Core.Generation.Cost;
 using Backend.Core.Generation.PlatformConstraints;
 using Backend.Core.Integrations;
@@ -9,6 +10,7 @@ using Backend.Core.Secrets;
 using Backend.Core.Storage;
 using Backend.Infrastructure.Configuration.Secrets;
 using Backend.Infrastructure.Generation;
+using Backend.Infrastructure.Integrations.Gemini;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Orchestration.Maf;
 using Backend.Infrastructure.Persistence;
@@ -50,6 +52,56 @@ internal static class TestGeneration
             HaikuModel: HaikuModel,
             Trace: trace ?? new LocalTraceRecorder(),
             LoggerFactory: NullLoggerFactory.Instance);
+    }
+
+    /// <summary>
+    /// Eval variant: deterministic deps wired with the read-only recording doubles (Option A) so a test
+    /// can run a mock-mode generation and then read the two off-state fields — injected provenance ids
+    /// (from the recording retrieval) and per-node retry counts (from the call-counting chat client) —
+    /// that are not recoverable from RunState/trace. No production code or frozen contract changes.
+    /// </summary>
+    public static (GenerationAgentDeps Deps, RecordingRetrievalService Retrieval, CountingChatClient Chat) EvalDeps(
+        IEnumerable<string>? failTools = null,
+        IEnumerable<string>? flakyTools = null,
+        decimal globalCeilingUsd = 1.00m)
+    {
+        var chat = new CountingChatClient(new DeterministicGenerationChatClient(failTools, flakyTools));
+        var retrieval = new RecordingRetrievalService(new FakeRetrievalService());
+        var deps = new GenerationAgentDeps(
+            Generator: new ForcedToolGenerator(chat),
+            Retrieval: retrieval,
+            Media: new DeterministicMediaGenerationTool(),
+            Storage: new InMemoryStorageService(),
+            Constraints: Constraints(),
+            Prices: Prices(),
+            GlobalCeilingUsd: globalCeilingUsd,
+            SonnetModel: SonnetModel,
+            HaikuModel: HaikuModel,
+            Trace: new LocalTraceRecorder(),
+            LoggerFactory: NullLoggerFactory.Instance);
+        return (deps, retrieval, chat);
+    }
+
+    /// <summary>Projects the two off-state fields from the recording doubles, keyed by graph node.</summary>
+    public static (IReadOnlyDictionary<string, IReadOnlyList<string>> Injected, IReadOnlyDictionary<string, int> Retries) OffState(
+        RecordingRetrievalService retrieval, CountingChatClient chat)
+    {
+        var injected = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            [SystemOutput.Nodes.ContentStrategist] = retrieval.AllProvenanceIds,
+            [SystemOutput.Nodes.CreativeDirector] = retrieval.AllProvenanceIds,
+            [SystemOutput.Nodes.Copywriting] = retrieval.AllProvenanceIds,
+        };
+
+        var retries = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            [SystemOutput.Nodes.ContentStrategist] = chat.RetriesForTool("record_strategy_candidates"),
+            [SystemOutput.Nodes.SupervisorSelection] = chat.RetriesForTool("record_selection"),
+            [SystemOutput.Nodes.CreativeDirector] = chat.RetriesForTool("record_creative_direction"),
+            [SystemOutput.Nodes.Copywriting] = chat.RetriesForTool("record_caption"),
+        };
+
+        return (injected, retries);
     }
 
     /// <summary>
