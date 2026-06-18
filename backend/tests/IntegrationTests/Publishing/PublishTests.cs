@@ -7,12 +7,13 @@ using Xunit;
 namespace Backend.IntegrationTests.Publishing;
 
 /// <summary>
-/// Exercises the publish seam end-to-end through the durable jobs: ExecuteRun →
-/// approve → ResumeRun publishes via <c>MockMetaIntegration</c>. Reuses the
+/// Exercises the publish seam end-to-end through the durable jobs: ExecuteRun â†’
+/// approve â†’ ResumeRun publishes via <c>MockMetaIntegration</c>. Reuses the
 /// durability fixture (real Postgres + RLS-bound contexts).
 /// </summary>
 [Trait("Category", "Publish")]
-public sealed class PublishTests : IClassFixture<DurabilityFixture>
+[Collection("Durability")]
+public sealed class PublishTests
 {
     private readonly DurabilityFixture _fixture;
 
@@ -36,7 +37,7 @@ public sealed class PublishTests : IClassFixture<DurabilityFixture>
         Assert.NotNull(state!.Publish);
         Assert.False(string.IsNullOrWhiteSpace(state.Publish!.ExternalRef));
         Assert.StartsWith("mock://meta/", state.Publish.ExternalRef!);
-        Assert.Equal("published", state.Publish.Status);
+        Assert.Equal(PublishStatus.Published, state.Publish.Status);
         Assert.Empty(state.Errors);
 
         var (readDb, scope) = _fixture.CreateReadContext(_fixture.BrandA);
@@ -51,15 +52,24 @@ public sealed class PublishTests : IClassFixture<DurabilityFixture>
     [Fact]
     public async Task Mock_publish_is_deterministic_for_the_same_content_id()
     {
-        // The publish key is the run id; a retried publish must re-use the same ref.
-        var runId = Guid.NewGuid();
-        var expected = $"mock://meta/{DeterministicGuid.From(runId, "meta")}";
+        // The published media id is keyed on the content item id; two separate create+publish
+        // cycles for the same content must yield the same external ref (DL-039).
+        var contentItemId = Guid.NewGuid();
+        var expected = $"mock://meta/{DeterministicGuid.From(contentItemId, "meta")}";
 
         var meta = new Backend.Infrastructure.Integrations.Meta.MockMetaIntegration();
-        var first = await meta.PublishAsync(new Core.Integrations.PublishRequest(
-            BrandId: Guid.NewGuid(), ContentItemId: runId, Caption: "c", MediaStorageKey: "k"));
-        var second = await meta.PublishAsync(new Core.Integrations.PublishRequest(
-            BrandId: Guid.NewGuid(), ContentItemId: runId, Caption: "c", MediaStorageKey: "k"));
+        var request = new Core.Integrations.PublishRequest(
+            ContentItemId: contentItemId,
+            Surface: Core.Integrations.PostSurface.FeedImage,
+            MediaUrl: "k",
+            Caption: "c",
+            Hashtags: [],
+            AccessToken: string.Empty);
+
+        var c1 = await meta.CreateContainerAsync(request);
+        var first = await meta.PublishContainerAsync(c1.CreationId!);
+        var c2 = await meta.CreateContainerAsync(request);
+        var second = await meta.PublishContainerAsync(c2.CreationId!);
 
         Assert.Equal(expected, first.ExternalRef);
         Assert.Equal(first.ExternalRef, second.ExternalRef);

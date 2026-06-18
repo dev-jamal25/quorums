@@ -2,11 +2,16 @@ using Backend.Core.Generation.Cost;
 using Backend.Core.Generation.PlatformConstraints;
 using Backend.Core.Integrations;
 using Backend.Core.Knowledge;
+using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
 using Backend.Core.Orchestration.Contracts;
+using Backend.Core.Secrets;
 using Backend.Core.Storage;
+using Backend.Infrastructure.Configuration.Secrets;
 using Backend.Infrastructure.Generation;
+using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Orchestration.Maf;
+using Backend.Infrastructure.Persistence;
 using Backend.Infrastructure.Tracing;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -46,6 +51,19 @@ internal static class TestGeneration
             Trace: trace ?? new LocalTraceRecorder(),
             LoggerFactory: NullLoggerFactory.Instance);
     }
+
+    /// <summary>
+    /// Builds the real <see cref="MafOrchestrator"/>. Generation-only tests omit the publish deps
+    /// (RunGenerationAsync never touches them); publish tests pass a real coordinator + brand-scoped
+    /// db/scope so RunPublishAsync runs end-to-end.
+    /// </summary>
+    public static MafOrchestrator Orchestrator(
+        GenerationAgentDeps deps,
+        PublishCoordinator? coordinator = null,
+        AppDbContext? db = null,
+        IBrandScope? scope = null,
+        ISecretsProvider? secrets = null)
+        => new(deps, coordinator!, db!, scope!, secrets ?? new PassthroughSecretsProvider());
 
     public static CostPrices Prices() => new(
         SonnetInputPerMTok: 3m,

@@ -39,6 +39,10 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("ScheduledJobId")
+                        .HasColumnType("text")
+                        .HasColumnName("scheduled_job_id");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -64,6 +68,17 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("action");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("actor");
+
                     b.Property<Guid>("AgentRunId")
                         .HasColumnType("uuid")
                         .HasColumnName("agent_run_id");
@@ -72,20 +87,29 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("brand_id");
 
-                    b.Property<DateTimeOffset>("DecidedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("decided_at");
-
-                    b.Property<string>("DecidedBy")
-                        .IsRequired()
+                    b.Property<string>("EditedCaption")
                         .HasColumnType("text")
-                        .HasColumnName("decided_by");
+                        .HasColumnName("edited_caption");
 
-                    b.Property<string>("Decision")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("decision");
+                    b.PrimitiveCollection<List<string>>("EditedHashtags")
+                        .HasColumnType("text[]")
+                        .HasColumnName("edited_hashtags");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("text")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("RegenerateMode")
+                        .HasColumnType("text")
+                        .HasColumnName("regenerate_mode");
+
+                    b.Property<DateTimeOffset?>("ScheduledFor")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scheduled_for");
 
                     b.HasKey("Id")
                         .HasName("pk_approval_actions");
@@ -451,6 +475,62 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_knowledge_docs_brand_id");
 
                     b.ToTable("knowledge_docs");
+                });
+
+            modelBuilder.Entity("Backend.Core.Domain.PublishRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_run_id");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempt_count");
+
+                    b.Property<Guid>("BrandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("brand_id");
+
+                    b.Property<Guid>("ContentItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("content_item_id");
+
+                    b.Property<string>("CreationId")
+                        .HasColumnType("text")
+                        .HasColumnName("creation_id");
+
+                    b.Property<string>("EngagementKeys")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("engagement_keys");
+
+                    b.Property<string>("ExternalRef")
+                        .HasColumnType("text")
+                        .HasColumnName("external_ref");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_publish_records");
+
+                    b.HasIndex("BrandId")
+                        .HasDatabaseName("ix_publish_records_brand_id");
+
+                    b.HasIndex("ContentItemId")
+                        .HasDatabaseName("ix_publish_records_content_item_id");
+
+                    b.ToTable("publish_records");
                 });
 
             modelBuilder.Entity("Backend.Core.Domain.RunCheckpoint", b =>

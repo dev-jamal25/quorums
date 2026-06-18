@@ -6,11 +6,12 @@ namespace Backend.IntegrationTests.Tracing;
 /// <summary>
 /// Verifies the trace surface that backs <c>GET /runs/{id}/trace</c>: spans exist for
 /// every node and every tool call, the trace is one continuous id across the
-/// ExecuteRun → ResumeRun seam, and trace data is brand-scoped (RLS), so one brand
+/// ExecuteRun â†’ ResumeRun seam, and trace data is brand-scoped (RLS), so one brand
 /// cannot read another's trace. Reuses the durability fixture (real Postgres).
 /// </summary>
 [Trait("Category", "Trace")]
-public sealed class TraceTests : IClassFixture<DurabilityFixture>
+[Collection("Durability")]
+public sealed class TraceTests
 {
     private readonly DurabilityFixture _fixture;
 

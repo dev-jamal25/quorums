@@ -6,7 +6,7 @@ namespace Backend.Infrastructure.Tracing;
 /// No-op-to-Langfuse trace recorder: assembles the trace in-process and persists it
 /// via <see cref="TraceRefs"/> on the checkpoint, with no network call. Selected when
 /// Langfuse is not configured (keys empty) — the run must never depend on Langfuse
-/// being present.
+/// being present. Generations are a Langfuse-only enrichment, so they no-op here.
 /// </summary>
 public sealed class LocalTraceRecorder : ITrace
 {
@@ -23,5 +23,19 @@ public sealed class LocalTraceRecorder : ITrace
         string? detail = null,
         CancellationToken cancellationToken = default) =>
         Task.FromResult(
-            TraceAssembler.Append(current, node, tool, status, startedAt, endedAt, errorMessage, detail));
+            TraceAssembler.Append(current, runId, node, tool, status, startedAt, endedAt, errorMessage, detail));
+
+    public Task RecordGenerationAsync(
+        Guid runId,
+        Guid brandId,
+        string name,
+        string? model,
+        long? inputTokens,
+        long? outputTokens,
+        string? input,
+        string? output,
+        DateTimeOffset startedAt,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
 }

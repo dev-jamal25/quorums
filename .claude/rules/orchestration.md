@@ -13,6 +13,9 @@ paths:
 - Durable state lives in Postgres (`RunState` / `RunCheckpoint`). The Microsoft Agent Framework graph runs ONLY within a single segment between checkpoints. Never hold a run open in memory across a human gate.
 - State passes through Postgres, never through the Hangfire job payload. A job payload is `runId` + segment marker — nothing more.
 
+## Run status transitions go through the guard
+- Every `RunStatus` change goes through the central transition guard (`AgentRun.TransitionTo` → `RunStatusTransition`), which is the single source of truth for legal edges. Raw `run.Status = …` assignments are BANNED outside initial entity creation (the `Queued` start state on a new `AgentRun`). A new edge is added to `RunStatusTransition`, not invented at a call site; an illegal transition throws `InvalidRunStatusTransitionException`.
+
 ## Supervisor authority
 - The Supervisor is the SOLE writer of `RunState.Phase`, `Draft`, and `Budget`. Each agent writes only its declared slice.
 - Handoffs between agents are typed records, never free-form strings the next agent has to parse.

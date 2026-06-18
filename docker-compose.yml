@@ -10,9 +10,14 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     # ASP.NET Core Web API. HTTP surface: brands, knowledge CMS, runs, approvals, assets.
+    # Vault is opt-in via the env_file (Vault__Enabled in .env). Do NOT hardcode it here — a compose
+    # `environment:` value overrides env_file and would force Vault off, blocking the KV/Transit path.
     environment:
-      Vault__Enabled: "false"
+      # Browser origin allowed to call the API (config-driven). The dashboard's custom X-Brand-Id
+      # header triggers a CORS preflight; this is the frontend container's host origin.
+      Cors__AllowedOrigins__0: "http://localhost:3000"
     env_file: [.env]
+    restart: unless-stopped
     ports:
       - "8080:8080"
     extra_hosts:
@@ -30,6 +35,10 @@ services:
         condition: service_healthy
       tei-rerank:
         condition: service_healthy
+      # The Worker is the sole Hangfire-schema installer; wait until its schema-readiness
+      # healthcheck passes so the api never touches the store before the schema exists.
+      worker:
+        condition: service_healthy
 
   worker:
     build:
@@ -37,10 +46,10 @@ services:
       dockerfile: Dockerfile
     # .NET Worker Service hosting the Hangfire server. Same publish output as api
     # (zero version skew); overrides the entrypoint to run the worker assembly.
-    environment:
-      Vault__Enabled: "false"
+    # Vault is opt-in via the env_file (Vault__Enabled in .env) — not hardcoded here (see api).
     command: ["Backend.Worker.dll"]
     env_file: [.env]
+    restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -56,6 +65,15 @@ services:
         condition: service_healthy
       tei-rerank:
         condition: service_healthy
+    # Reflects Hangfire schema readiness: the worker drops /tmp/hangfire-ready once its host has
+    # started (PostgreSqlObjectsInstaller has created the hangfire schema + tables). The api's
+    # depends_on gates on this, so schema install happens in exactly one place, before the api uses it.
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/hangfire-ready || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 60s
 
   frontend:
     build:
@@ -137,7 +155,11 @@ services:
     # DL-024: replaces Ollama. Listens on port 80; weights downloaded on first start.
     # Named volume persists the model cache so weights are not re-downloaded each run.
     # Generous start_period covers first-run weight download.
-    command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5"]
+    # --revision is PINNED: upstream `main` config.json churns (a "standardize for
+    # Transformers" change adds a duplicate `max_position_embeddings`) and TEI 1.6's
+    # strict parser rejects duplicate keys → "Failed to parse config.json" → exit(1).
+    # bf8779d… is the verified-clean NomicBert config. Do NOT drop the pin.
+    command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5", "--revision", "bf8779d6d6e2b2b40132bc9266cc056a342aa4ed"]
     ports:
       - "8090:80"
     volumes:

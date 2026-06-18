@@ -7,13 +7,14 @@ namespace Backend.IntegrationTests.Durability;
 
 /// <summary>
 /// The adversarial proof (DL-018): a real MAF graph runs behind the c1/c2 durable seam, and
-/// the checkpoint→exit→resume round-trip survives a worker kill with no duplicated side
+/// the checkpointâ†’exitâ†’resume round-trip survives a worker kill with no duplicated side
 /// effects. Each segment job is invoked twice to simulate a crash + Hangfire re-run; the
 /// status guards make the re-runs no-ops, so there is exactly one checkpoint, one asset, and
 /// one publish.
 /// </summary>
 [Trait("Category", "Durability")]
-public sealed class MafResumeSeamTests : IClassFixture<DurabilityFixture>
+[Collection("Durability")]
+public sealed class MafResumeSeamTests
 {
     private readonly DurabilityFixture _fixture;
 
@@ -24,11 +25,11 @@ public sealed class MafResumeSeamTests : IClassFixture<DurabilityFixture>
     {
         var runId = await _fixture.SeedAgentRunAsync(_fixture.BrandA);
 
-        // Segment 1: ExecuteRun runs the MAF generation graph → checkpoint → AwaitingApproval.
+        // Segment 1: ExecuteRun runs the MAF generation graph â†’ checkpoint â†’ AwaitingApproval.
         var (execDb, execJob) = _fixture.CreateExecuteRunJob(_fixture.BrandA);
         await using (execDb) { await execJob.ExecuteAsync(runId, _fixture.BrandA); }
 
-        // Worker killed, Hangfire retries segment 1: re-run → guarded no-op (already AwaitingApproval).
+        // Worker killed, Hangfire retries segment 1: re-run â†’ guarded no-op (already AwaitingApproval).
         var (exec2Db, exec2Job) = _fixture.CreateExecuteRunJob(_fixture.BrandA);
         await using (exec2Db) { await exec2Job.ExecuteAsync(runId, _fixture.BrandA); }
 
@@ -42,11 +43,11 @@ public sealed class MafResumeSeamTests : IClassFixture<DurabilityFixture>
 
         await _fixture.ApproveRunAsync(runId, _fixture.BrandA);
 
-        // Segment 2: a fresh ResumeRun rehydrates from the checkpoint → mock publish → Done.
+        // Segment 2: a fresh ResumeRun rehydrates from the checkpoint â†’ mock publish â†’ Done.
         var (resDb, resJob) = _fixture.CreateResumeRunJob(_fixture.BrandA);
         await using (resDb) { await resJob.ExecuteAsync(runId, _fixture.BrandA); }
 
-        // Worker killed, Hangfire retries segment 2: re-run → guarded no-op (already Done).
+        // Worker killed, Hangfire retries segment 2: re-run â†’ guarded no-op (already Done).
         var (res2Db, res2Job) = _fixture.CreateResumeRunJob(_fixture.BrandA);
         await using (res2Db) { await res2Job.ExecuteAsync(runId, _fixture.BrandA); }
 
@@ -54,10 +55,10 @@ public sealed class MafResumeSeamTests : IClassFixture<DurabilityFixture>
         Assert.NotNull(final);
         Assert.Equal(GraphPhase.Done, final!.Phase);
         Assert.StartsWith("mock://meta/", final.Publish!.ExternalRef!);
-        Assert.Equal("published", final.Publish.Status);
+        Assert.Equal(PublishStatus.Published, final.Publish.Status);
         Assert.Empty(final.Errors);
 
-        // One continuous trace across the ExecuteRun → ResumeRun seam.
+        // One continuous trace across the ExecuteRun â†’ ResumeRun seam.
         Assert.False(string.IsNullOrEmpty(final.Trace.TraceId));
         Assert.Equal(final.Trace.Spans.Count, final.Trace.SpanIds.Count);
         Assert.Contains(final.Trace.Spans, s => s.Node == "strategy");
@@ -71,7 +72,7 @@ public sealed class MafResumeSeamTests : IClassFixture<DurabilityFixture>
             var run = await readDb.AgentRuns.AsNoTracking().FirstAsync(r => r.Id == runId);
             Assert.Equal(RunStatus.Done, run.Status);
 
-            // Exactly one checkpoint across all four job invocations — no duplicate side effects.
+            // Exactly one checkpoint across all four job invocations â€” no duplicate side effects.
             var checkpoints = await readDb.RunCheckpoints.AsNoTracking()
                 .Where(c => c.AgentRunId == runId)
                 .ToListAsync();

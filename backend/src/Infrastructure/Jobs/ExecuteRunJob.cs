@@ -3,6 +3,7 @@ using Backend.Core.Domain;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
 using Backend.Infrastructure.Persistence;
+using Backend.Infrastructure.Tracing;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Infrastructure.Jobs;
@@ -29,6 +30,11 @@ public sealed class ExecuteRunJob
     public async Task ExecuteAsync(Guid runId, Guid brandId, CancellationToken cancellationToken = default)
     {
         _brandContext.Bind(brandId);
+
+        // Bind the ambient run-trace context so every LLM call in this segment records a generation on
+        // this run's trace (the wrapping LangfuseChatClient reads it). ExecuteRun makes the LLM calls.
+        using var traceScope = RunTraceScope.Begin(runId, brandId);
+
         await using var handle = await _scope.BeginAsync(cancellationToken);
 
         var run = await _db.AgentRuns
@@ -49,8 +55,7 @@ public sealed class ExecuteRunJob
         }
 
         var now = DateTimeOffset.UtcNow;
-        run.Status = RunStatus.Running;
-        run.UpdatedAt = now;
+        run.TransitionTo(RunStatus.Running, now);
 
         // The brand's structured pillars (the Strategist's validation contract, R7) and the run's
         // target surface (the aspect-ratio stamp + Copywriting/Media constraints) are readable run
@@ -103,8 +108,9 @@ public sealed class ExecuteRunJob
         // A fatal node failure (Strategist/CD/selection exhaustion, global ceiling, Gemini fail) fails
         // the run; otherwise it reaches the human gate. The checkpoint is written either way so the
         // trace and errors are visible (DL-022/023).
-        run.Status = state.FatalError is not null ? RunStatus.Failed : RunStatus.AwaitingApproval;
-        run.UpdatedAt = now;
+        run.TransitionTo(
+            state.FatalError is not null ? RunStatus.Failed : RunStatus.AwaitingApproval,
+            now);
 
         await _db.SaveChangesAsync(cancellationToken);
         await handle.CompleteAsync(cancellationToken);

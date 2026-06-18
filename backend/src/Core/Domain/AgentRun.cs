@@ -16,4 +16,30 @@ public sealed class AgentRun : IBrandScoped
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>
+    /// The Hangfire job id of the delayed <c>ResumeRun</c> when this run is <see cref="RunStatus.Scheduled"/>
+    /// (DL-037). Stored so cancel can <c>BackgroundJob.Delete</c> the pending job deterministically; null
+    /// outside the scheduled window. A run-level infrastructure correlation, like <see cref="Status"/> —
+    /// not orchestration state (distinct from the Supervisor-owned <c>RunState</c>, DL-020).
+    /// </summary>
+    public string? ScheduledJobId { get; set; }
+
+    /// <summary>
+    /// Advances the run to <paramref name="target"/> through the central transition guard
+    /// (<see cref="RunStatusTransition"/>) and stamps <see cref="UpdatedAt"/>. This is the ONLY
+    /// sanctioned way to change <see cref="Status"/> after creation — raw assignments are banned
+    /// (DL-006, DL-036, DL-037).
+    /// </summary>
+    /// <exception cref="InvalidRunStatusTransitionException">The edge is not permitted.</exception>
+    public void TransitionTo(RunStatus target, DateTimeOffset occurredAt)
+    {
+        if (!RunStatusTransition.IsAllowed(Status, target))
+        {
+            throw new InvalidRunStatusTransitionException(Status, target);
+        }
+
+        Status = target;
+        UpdatedAt = occurredAt;
+    }
 }

@@ -1,3 +1,4 @@
+using Backend.Core.Domain;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -83,6 +84,76 @@ public sealed class RlsLeakageTests : IClassFixture<RlsLeakageFixture>
             var foreignRow = await db.BrandProfiles.AsNoTracking()
                 .FirstOrDefaultAsync(profile => profile.Id == _fixture.ProfileB);
             Assert.Null(foreignRow);
+        }
+    }
+
+    [Fact]
+    public async Task Audit_tables_are_brand_scoped_brand_A_sees_only_its_own_rows()
+    {
+        // The Phase-6 audit tables (DL-040) ride the same RLS policy as every brand-scoped table:
+        // no WHERE on brand_id, RLS does the filtering. Brand A sees exactly its own audit rows.
+        var (db, scope) = _fixture.CreateBrandScopedContext(_fixture.BrandA);
+        await using (db)
+        {
+            await using var handle = await scope.BeginAsync();
+
+            var approvals = await db.ApprovalActions.AsNoTracking().ToListAsync();
+            Assert.NotEmpty(approvals);
+            Assert.All(approvals, a => Assert.Equal(_fixture.BrandA, a.BrandId));
+
+            var publishes = await db.PublishRecords.AsNoTracking().ToListAsync();
+            Assert.NotEmpty(publishes);
+            Assert.All(publishes, p => Assert.Equal(_fixture.BrandA, p.BrandId));
+        }
+    }
+
+    [Fact]
+    public async Task Audit_write_cannot_escape_the_brand_scope()
+    {
+        // Under Brand A's scope, a write that smuggles Brand B's id must be rejected by the policy's
+        // WITH CHECK clause — isolation guards writes, not just reads.
+        var (db, scope) = _fixture.CreateBrandScopedContext(_fixture.BrandA);
+        await using (db)
+        {
+            await using var handle = await scope.BeginAsync();
+
+            db.PublishRecords.Add(new PublishRecord
+            {
+                Id = Guid.NewGuid(),
+                BrandId = _fixture.BrandB,          // foreign brand — must not be writable from A's scope
+                AgentRunId = Guid.NewGuid(),
+                ContentItemId = Guid.NewGuid(),
+                Status = PublishStatus.Published,
+                ExternalRef = "mock://meta/escape",
+                AttemptCount = 1,
+                OccurredAt = DateTimeOffset.UtcNow,
+            });
+
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        }
+    }
+
+    [Fact]
+    public async Task ApprovalAction_write_cannot_escape_the_brand_scope()
+    {
+        // The gate's ApprovalAction writes (Slice 3) ride the same WITH CHECK policy: under Brand A's
+        // scope a row carrying Brand B's id is rejected.
+        var (db, scope) = _fixture.CreateBrandScopedContext(_fixture.BrandA);
+        await using (db)
+        {
+            await using var handle = await scope.BeginAsync();
+
+            db.ApprovalActions.Add(new ApprovalAction
+            {
+                Id = Guid.NewGuid(),
+                BrandId = _fixture.BrandB,          // foreign brand — must not be writable from A's scope
+                AgentRunId = Guid.NewGuid(),
+                Action = ApprovalActionType.Approve,
+                Actor = "human",
+                OccurredAt = DateTimeOffset.UtcNow,
+            });
+
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
         }
     }
 

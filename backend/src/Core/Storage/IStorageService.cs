@@ -25,6 +25,14 @@ public interface IStorageService
     Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads the object at <paramref name="key"/> (bytes + content type), or <c>null</c> when no object
+    /// exists there. Used by the API media proxy to render a brand's asset; the key is resolved from the
+    /// brand's own RLS-scoped run, so this read never crosses the structural <c>brands/{brandId}/</c>
+    /// prefix.
+    /// </summary>
+    Task<StorageObject?> GetAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists object keys under <paramref name="prefix"/>. Used to prove prefix
     /// isolation: a brand-B prefix never surfaces a brand-A object.
     /// </summary>

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Backend.Core.Orchestration.Contracts;
 
 /// <summary>
@@ -6,6 +8,7 @@ namespace Backend.Core.Orchestration.Contracts;
 /// <see cref="Grounding.Grounded"/>, which is derived from the validated provenance intersection
 /// (DL-034 R6), not trusted from the model.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum Confidence
 {
     Low,

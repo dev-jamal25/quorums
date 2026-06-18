@@ -59,7 +59,9 @@ services:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
     # Embedding server: nomic-ai/nomic-embed-text-v1.5, 768-dim, cosine (DL-024).
     # Named volume caches weights. Healthcheck must use generous start_period (>=120s).
-    command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5"]
+    # --revision is PINNED: unpinned `main` config.json churns (duplicate
+    # `max_position_embeddings`) and TEI 1.6's strict parser exits(1). Do NOT drop it.
+    command: ["--model-id", "nomic-ai/nomic-embed-text-v1.5", "--revision", "bf8779d6d6e2b2b40132bc9266cc056a342aa4ed"]
     # volumes: [tei-embed-cache:/data]
 
   tei-rerank:

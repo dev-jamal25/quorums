@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Backend.Core.Domain;
+using Backend.Core.Integrations;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
+using Backend.Infrastructure.Configuration.Secrets;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Multitenancy;
@@ -9,6 +11,7 @@ using Backend.Infrastructure.Orchestration.Maf;
 using Backend.Infrastructure.Persistence;
 using Backend.IntegrationTests.Support;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Pgvector.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
@@ -76,16 +79,16 @@ public sealed class DurabilityFixture : IAsyncLifetime
         // mirroring a privileged controller path.
         await using var db = CreateDbContext(SuperuserConnectionString);
         var run = await db.AgentRuns.FirstAsync(r => r.Id == runId);
-        run.Status = RunStatus.Publishing;
-        run.UpdatedAt = DateTimeOffset.UtcNow;
+        var now = DateTimeOffset.UtcNow;
+        run.TransitionTo(RunStatus.Publishing, now);
         db.ApprovalActions.Add(new ApprovalAction
         {
             Id = Guid.NewGuid(),
             BrandId = brandId,
             AgentRunId = runId,
-            Decision = ApprovalDecision.Approved,
-            DecidedBy = "test",
-            DecidedAt = DateTimeOffset.UtcNow,
+            Action = ApprovalActionType.Approve,
+            Actor = "test",
+            OccurredAt = now,
         });
         await db.SaveChangesAsync();
     }
@@ -97,7 +100,9 @@ public sealed class DurabilityFixture : IAsyncLifetime
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new MafOrchestrator(deps ?? TestGeneration.Deps(), new MockMetaIntegration());
+        var secrets = new PassthroughSecretsProvider();
+        var coordinator = new PublishCoordinator(db, scope, new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(deps ?? TestGeneration.Deps(), coordinator, db, scope, secrets);
         return (db, new ExecuteRunJob(db, scope, brandContext, orchestrator));
     }
 
@@ -113,15 +118,32 @@ public sealed class DurabilityFixture : IAsyncLifetime
         }
     }
 
-    public (AppDbContext Db, ResumeRunJob Job) CreateResumeRunJob(Guid brandId)
+    /// <summary>The regenerate re-entry job over a brand-scoped, RLS-bound context (DL-036).</summary>
+    public (AppDbContext Db, RegenerateRunJob Job) CreateRegenerateRunJob(Guid brandId)
     {
         var db = CreateAppDbContext();
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         var scope = new BrandScope(db, brandContext);
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(), new MockMetaIntegration());
-        return (db, new ResumeRunJob(db, scope, brandContext, orchestrator));
+        var orchestrator = TestGeneration.Orchestrator(TestGeneration.Deps());
+        return (db, new RegenerateRunJob(db, scope, brandContext, orchestrator));
+    }
+
+    public (AppDbContext Db, ResumeRunJob Job) CreateResumeRunJob(Guid brandId)
+        => CreateResumeRunJob(brandId, new MockMetaIntegration());
+
+    /// <summary>Resume job wired with a caller-supplied Meta integration (so a test can inject
+    /// deterministic failures and read its counters) over a brand-scoped, RLS-bound context.</summary>
+    public (AppDbContext Db, ResumeRunJob Job) CreateResumeRunJob(Guid brandId, IMetaIntegration meta)
+    {
+        var db = CreateAppDbContext();
+        var brandContext = new BrandContext();
+        brandContext.Bind(brandId);
+        var scope = new BrandScope(db, brandContext);
+        var coordinator = new PublishCoordinator(db, scope, meta);
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(), coordinator, db, scope, new PassthroughSecretsProvider());
+        return (db, new ResumeRunJob(db, scope, brandContext, orchestrator, NullLogger<ResumeRunJob>.Instance));
     }
 
     /// <summary>
@@ -149,6 +171,30 @@ public sealed class DurabilityFixture : IAsyncLifetime
         var brandContext = new BrandContext();
         brandContext.Bind(brandId);
         return (db, new BrandScope(db, brandContext));
+    }
+
+    /// <summary>The brand-scoped trio a controller is constructed from (RLS-subject role, bound brand).</summary>
+    public (AppDbContext Db, IBrandScope Scope, IBrandContext BrandContext) CreateGateDeps(Guid brandId)
+    {
+        var db = CreateAppDbContext();
+        var brandContext = new BrandContext();
+        brandContext.Bind(brandId);
+        return (db, new BrandScope(db, brandContext), brandContext);
+    }
+
+    /// <summary>Seeds a run checkpoint (superuser, bypassing RLS) so a gate test can assert the draft is untouched.</summary>
+    public async Task SeedCheckpointAsync(Guid runId, Guid brandId, string stateJson)
+    {
+        await using var db = CreateDbContext(SuperuserConnectionString);
+        db.RunCheckpoints.Add(new RunCheckpoint
+        {
+            Id = Guid.NewGuid(),
+            BrandId = brandId,
+            AgentRunId = runId,
+            StateJson = stateJson,
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        await db.SaveChangesAsync();
     }
 
     private AppDbContext CreateAppDbContext() => CreateDbContext(AppUserConnectionString);
@@ -195,6 +241,13 @@ public sealed class DurabilityFixture : IAsyncLifetime
         seed.Brands.AddRange(
             new Brand { Id = BrandA, Name = "Brand A", CreatedAt = now },
             new Brand { Id = BrandB, Name = "Brand B", CreatedAt = now });
+
+        // A demo Meta connection per brand so the publish path resolves a token (dev passthrough
+        // ciphertext == plaintext). Seeded via superuser (bypasses RLS), like the brands themselves.
+        seed.BrandMetaConnections.AddRange(
+            new BrandMetaConnection { Id = Guid.NewGuid(), BrandId = BrandA, TokenCiphertext = "demo-meta-token", TokenType = "bearer" },
+            new BrandMetaConnection { Id = Guid.NewGuid(), BrandId = BrandB, TokenCiphertext = "demo-meta-token", TokenType = "bearer" });
+
         await seed.SaveChangesAsync();
     }
 }

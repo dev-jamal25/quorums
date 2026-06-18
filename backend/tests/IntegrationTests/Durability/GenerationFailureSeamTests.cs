@@ -10,7 +10,8 @@ namespace Backend.IntegrationTests.Durability;
 /// trace). Covers the global-ceiling breach and a fatal-node exhaustion across the durable seam.
 /// </summary>
 [Trait("Category", "Durability")]
-public sealed class GenerationFailureSeamTests : IClassFixture<DurabilityFixture>
+[Collection("Durability")]
+public sealed class GenerationFailureSeamTests
 {
     private readonly DurabilityFixture _fixture;
 
@@ -20,7 +21,7 @@ public sealed class GenerationFailureSeamTests : IClassFixture<DurabilityFixture
     public async Task Global_ceiling_breach_marks_the_run_failed()
     {
         var runId = await _fixture.SeedAgentRunAsync(_fixture.BrandA);
-        // $0.05 < the $0.057 accumulated pre-fork spend (Strategist + selection + CD) → the Media
+        // $0.05 < the $0.057 accumulated pre-fork spend (Strategist + selection + CD) â†’ the Media
         // gate breaches on pre-fork spend alone, and the job maps the AgentRun to Failed.
         var (db, job) = _fixture.CreateExecuteRunJob(
             _fixture.BrandA, TestGeneration.Deps(globalCeilingUsd: 0.05m));

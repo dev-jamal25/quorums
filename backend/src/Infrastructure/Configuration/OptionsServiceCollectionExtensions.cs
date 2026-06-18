@@ -29,6 +29,7 @@ public static class OptionsServiceCollectionExtensions
         services.AddValidatedOptions<QueryTransformOptions>(configuration, QueryTransformOptions.SectionName);
         services.AddValidatedOptions<HangfireOptions>(configuration, HangfireOptions.SectionName);
         services.AddValidatedOptions<MetaOptions>(configuration, MetaOptions.SectionName);
+        services.AddValidatedOptions<RegenerationOptions>(configuration, RegenerationOptions.SectionName);
         // Generation pipeline (DL-027/029/030): model selection, cost prices, platform constraints
         // — all config-bound, never literals in agent code.
         services.AddValidatedOptions<GenerationOptions>(configuration, GenerationOptions.SectionName);

@@ -5,7 +5,8 @@ using Xunit;
 namespace Backend.IntegrationTests.Durability;
 
 [Trait("Category", "Durability")]
-public sealed class DurabilityTests : IClassFixture<DurabilityFixture>
+[Collection("Durability")]
+public sealed class DurabilityTests
 {
     private readonly DurabilityFixture _fixture;
 
@@ -43,18 +44,18 @@ public sealed class DurabilityTests : IClassFixture<DurabilityFixture>
     {
         var runId = await _fixture.SeedAgentRunAsync(_fixture.BrandA);
 
-        // Phase 1: ExecuteRun — scope 1
+        // Phase 1: ExecuteRun â€” scope 1
         var (execDb, execJob) = _fixture.CreateExecuteRunJob(_fixture.BrandA);
         await using (execDb) { await execJob.ExecuteAsync(runId, _fixture.BrandA); }
 
-        // Simulate approval: mirrors the controller's AwaitingApproval → Publishing transition
+        // Simulate approval: mirrors the controller's AwaitingApproval â†’ Publishing transition
         await _fixture.ApproveRunAsync(runId, _fixture.BrandA);
 
-        // Phase 2: ResumeRun — scope 2 (fresh DbContext, fresh BrandContext, fresh BrandScope)
+        // Phase 2: ResumeRun â€” scope 2 (fresh DbContext, fresh BrandContext, fresh BrandScope)
         var (resumeDb, resumeJob) = _fixture.CreateResumeRunJob(_fixture.BrandA);
         await using (resumeDb) { await resumeJob.ExecuteAsync(runId, _fixture.BrandA); }
 
-        // Verification — scope 3
+        // Verification â€” scope 3
         var (readDb, scope) = _fixture.CreateReadContext(_fixture.BrandA);
         await using (readDb)
         {
@@ -73,13 +74,13 @@ public sealed class DurabilityTests : IClassFixture<DurabilityFixture>
         var (execDb, execJob) = _fixture.CreateExecuteRunJob(_fixture.BrandA);
         await using (execDb) { await execJob.ExecuteAsync(runId, _fixture.BrandA); }
 
-        // Approve: transitions AwaitingApproval → Publishing so ResumeRun's guard is satisfied.
+        // Approve: transitions AwaitingApproval â†’ Publishing so ResumeRun's guard is satisfied.
         await _fixture.ApproveRunAsync(runId, _fixture.BrandA);
 
         var (r1Db, r1Job) = _fixture.CreateResumeRunJob(_fixture.BrandA);
         await using (r1Db) { await r1Job.ExecuteAsync(runId, _fixture.BrandA); }
 
-        // Second invocation — status is now Done so the Publishing-only guard returns early
+        // Second invocation â€” status is now Done so the Publishing-only guard returns early
         var (r2Db, r2Job) = _fixture.CreateResumeRunJob(_fixture.BrandA);
         await using (r2Db) { await r2Job.ExecuteAsync(runId, _fixture.BrandA); }
 

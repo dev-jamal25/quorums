@@ -17,9 +17,9 @@ namespace Backend.IntegrationTests.Integrations;
 
 /// <summary>
 /// Opt-in live round-trip for the real Gemini media backend (STEP C). Runs the generation graph
-/// (deterministic Claude mock → a real CD-stamped <c>MediaPromptBrief</c>) with the <b>live</b>
+/// (deterministic Claude mock â†’ a real CD-stamped <c>MediaPromptBrief</c>) with the <b>live</b>
 /// <see cref="LiveGeminiMediaTool"/> and asserts a genuine image lands in storage behind a
-/// <see cref="MediaAssetRef"/>. Key-gated on <c>Gemini__ApiKey</c> — absent (as in CI, which runs
+/// <see cref="MediaAssetRef"/>. Key-gated on <c>Gemini__ApiKey</c> â€” absent (as in CI, which runs
 /// the mock) it no-ops, so neither the daily nor the 10-RPM free-tier limit ever touches CI. It
 /// fires exactly ONE Gemini request (well within 10 RPM); idempotency-on-retry is structural (the
 /// node's deterministic asset id) and proven on the mock in <c>StorageTests</c>.
@@ -41,7 +41,7 @@ public sealed class GeminiMediaLiveTests
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             // xUnit v2 has no dynamic Assert.Skip; the key gate keeps this opt-in (CI runs the mock).
-            _output.WriteLine("SKIP: no Gemini__ApiKey — opt-in live Gemini test.");
+            _output.WriteLine("SKIP: no Gemini__ApiKey â€” opt-in live Gemini test.");
             return;
         }
 
@@ -68,15 +68,15 @@ public sealed class GeminiMediaLiveTests
         var brandId = Guid.NewGuid();
         var state = TestGeneration.Seed(Guid.NewGuid(), brandId);
         var storage = new InMemoryStorageService();
-        var orchestrator = new MafOrchestrator(
-            TestGeneration.Deps(media: capturing, storage: storage), new MockMetaIntegration());
+        var orchestrator = TestGeneration.Orchestrator(
+            TestGeneration.Deps(media: capturing, storage: storage));
 
         // ONE generation = ONE Gemini call site (the node's bounded retry may re-issue it).
         var result = await orchestrator.RunGenerationAsync(state);
 
         // A quota/rate-limit (429) is an environment limit, not a code regression: the free-tier
         // image quota can be 0/day. Log it as PENDING (round-trip needs a billing-enabled key)
-        // rather than red-failing — the tool already mapped it to a structured ToolError.
+        // rather than red-failing â€” the tool already mapped it to a structured ToolError.
         if (result.FatalError is { Code: "media.generation_failed" } err &&
             (err.Message.Contains("429", StringComparison.Ordinal) ||
              err.Message.Contains("RESOURCE_EXHAUSTED", StringComparison.Ordinal)))
@@ -96,7 +96,7 @@ public sealed class GeminiMediaLiveTests
         Assert.True(capturing.Last.Bytes.Length > 1000, $"expected a real image, got {capturing.Last.Bytes.Length} bytes");
         Assert.True(IsPngOrJpeg(capturing.Last.Bytes), "stored bytes are not a recognizable PNG/JPEG");
 
-        // …wired through the node into a MediaAssetRef + a single brand-prefixed object (DL-022).
+        // â€¦wired through the node into a MediaAssetRef + a single brand-prefixed object (DL-022).
         Assert.NotNull(result.Media);
         Assert.StartsWith("image/", result.Media!.MimeType, StringComparison.Ordinal);
         Assert.StartsWith(StorageKeys.AssetPrefix(brandId), result.Media.StorageKey, StringComparison.Ordinal);
@@ -108,7 +108,7 @@ public sealed class GeminiMediaLiveTests
         Assert.Single(await storage.ListAsync(StorageKeys.AssetPrefix(brandId)));
 
         _output.WriteLine(
-            $"LIVE OK — model={model} mime={result.Media.MimeType} bytes={capturing.Last.Bytes.Length} key={result.Media.StorageKey}");
+            $"LIVE OK â€” model={model} mime={result.Media.MimeType} bytes={capturing.Last.Bytes.Length} key={result.Media.StorageKey}");
     }
 
     private static bool IsPngOrJpeg(byte[] bytes) =>

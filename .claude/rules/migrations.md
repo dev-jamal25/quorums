@@ -1,6 +1,6 @@
 ---
 paths:
-  - "backend/src/Infrastructure/Migrations/**/*.cs"
+  - "backend/src/Infrastructure/Persistence/Migrations/**/*.cs"
 ---
 
 # EF Core Migrations

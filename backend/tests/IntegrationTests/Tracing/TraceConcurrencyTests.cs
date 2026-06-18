@@ -1,6 +1,8 @@
 using Backend.Core.Orchestration;
+using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Tracing;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Backend.IntegrationTests.Tracing;
@@ -36,6 +38,7 @@ public sealed class TraceConcurrencyTests
 
     private static LangfuseTrace NewTracer(HttpMessageHandler handler) =>
         new(new HttpClient(handler) { BaseAddress = new Uri("http://langfuse.test/") },
+            Options.Create(new LangfuseOptions()),
             NullLogger<LangfuseTrace>.Instance);
 
     /// <summary>Builds the shared post-creative trace both fork branches start from.</summary>
@@ -90,5 +93,38 @@ public sealed class TraceConcurrencyTests
         Assert.All(results, r => Assert.Equal(3, r.Spans.Count));
         Assert.Contains(results, r => r.Spans.Any(s => s.Node == "copywriting"));
         Assert.Contains(results, r => r.Spans.Any(s => s.Node == "media" && s.Tool == "minio.put"));
+    }
+
+    private sealed class CapturingHandler : HttpMessageHandler
+    {
+        public List<string> Bodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Bodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        }
+    }
+
+    [Fact]
+    public async Task First_span_creates_a_named_brand_scoped_trace_exactly_once()
+    {
+        var runId = Guid.NewGuid();
+        var brandId = Guid.NewGuid();
+        var handler = new CapturingHandler();
+        var tracer = NewTracer(handler);
+        var now = DateTimeOffset.UtcNow;
+
+        // First span of the run -> the batch also creates the trace; a later span must not re-create it.
+        var afterFirst = await tracer.RecordAsync(
+            new TraceRefs(string.Empty, [], []), runId, brandId, "strategy", null, "ok", now, now, null);
+        await tracer.RecordAsync(afterFirst, runId, brandId, "creative", null, "ok", now, now, null);
+
+        Assert.Equal(2, handler.Bodies.Count);
+        Assert.Contains("trace-create", handler.Bodies[0]);          // the trace is created...
+        Assert.Contains("content-generation", handler.Bodies[0]);    // ...with a findable name + tag
+        Assert.Contains(brandId.ToString(), handler.Bodies[0]);      // userId = brand (cost attribution)
+        Assert.DoesNotContain("trace-create", handler.Bodies[1]);    // and only once
     }
 }
