@@ -1,5 +1,9 @@
 ---
 name: evaluation-suite
+metadata:
+  version: 1.1.0
+  foundation: Microsoft.Extensions.AI.Evaluation
+  decisions: DL-046..DL-053
 description: >-
   Implementation contract for the Quorums Phase-9 evaluation suite, built on the first-party
   Microsoft.Extensions.AI.Evaluation library. Use when building, extending, running, or debugging

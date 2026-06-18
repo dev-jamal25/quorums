@@ -3,8 +3,9 @@ namespace Backend.Core.Domain;
 /// <summary>
 /// One persisted evaluation result (DL-051): a single case × evaluator outcome under a parent
 /// <see cref="EvalRun"/>. Brand-scoped (rides the same RLS policy as <see cref="EvalRun"/>). The CLR
-/// type is named <c>EvalResultRow</c> to avoid clashing with the <c>Backend.Core.Evaluation.EvalResult</c>
-/// protocol record; the table is <c>eval_results</c> (DbSet-name convention, like <c>eval_records</c>).
+/// type is named <c>EvalResultRow</c> to read as a persistence row and to avoid clashing with the
+/// library's <c>Microsoft.Extensions.AI.Evaluation.EvaluationResult</c>; the table is <c>eval_results</c>
+/// (DbSet-name convention, like <c>eval_records</c>).
 /// </summary>
 public sealed class EvalResultRow : IBrandScoped
 {

@@ -117,6 +117,37 @@ public sealed class RuleBasedEvaluatorTests
     }
 
     [Fact]
+    public async Task Grounding_honesty_fails_when_a_node_claims_another_nodes_injected_id()
+    {
+        // Cross-node leak: Copywriting claims an id that was injected ONLY for the Creative Director.
+        // The evaluator must look up the PER-NODE injected set, so the claim is dishonest for Copywriting.
+        var evaluator = new GroundingHonestyEvaluator();
+        var output = EvalTestData.ValidOutput();
+        var adversarial = output with
+        {
+            Caption = output.Caption! with { Grounding = new Grounding(Grounded: true, ChunkIdsUsed: ["cd-only"], Confidence.High) },
+            InjectedChunkIdsByNode = new Dictionary<string, IReadOnlyList<string>>
+            {
+                [SystemOutput.Nodes.CreativeDirector] = ["cd-only"], // injected for node Y only
+                [SystemOutput.Nodes.Copywriting] = ["cw-only"],      // node X's real injected set
+            },
+        };
+        Assert.False(await PassedAsync(evaluator, adversarial, GroundingHonestyEvaluator.MetricNameConst));
+    }
+
+    [Fact]
+    public async Task Bounded_retry_fails_when_a_node_exceeds_the_retry_bound()
+    {
+        // A node reporting more than the bounded 2 retries is a trajectory violation regardless of errors.
+        var evaluator = new BoundedRetryEvaluator();
+        var adversarial = EvalTestData.ValidOutput() with
+        {
+            RetryCountsByNode = new Dictionary<string, int> { [SystemOutput.Nodes.Copywriting] = 3 },
+        };
+        Assert.False(await PassedAsync(evaluator, adversarial, BoundedRetryEvaluator.MetricNameConst));
+    }
+
+    [Fact]
     public async Task Budget_degradation_passes_on_a_clean_caption_only_run_and_fails_if_gemini_was_called()
     {
         var evaluator = new BudgetDegradationEvaluator();
