@@ -166,6 +166,17 @@ public sealed class RlsLeakageFixture : IAsyncLifetime
             new PublishRecord { Id = Guid.NewGuid(), BrandId = BrandA, AgentRunId = Guid.NewGuid(), ContentItemId = Guid.NewGuid(), Status = PublishStatus.Published, ExternalRef = "mock://meta/a", AttemptCount = 1, OccurredAt = now, EngagementKeys = new EngagementKeys("media-a", null) },
             new PublishRecord { Id = Guid.NewGuid(), BrandId = BrandB, AgentRunId = Guid.NewGuid(), ContentItemId = Guid.NewGuid(), Status = PublishStatus.Published, ExternalRef = "mock://meta/b", AttemptCount = 1, OccurredAt = now, EngagementKeys = new EngagementKeys("media-b", null) });
 
+        // Phase-9 eval store (DL-051/052): eval_runs + eval_results ride the same RLS policy, so the
+        // leakage test proves zero cross-brand visibility on both new brand-scoped tables.
+        var evalRunA = Guid.NewGuid();
+        var evalRunB = Guid.NewGuid();
+        seed.EvalRuns.AddRange(
+            new EvalRun { Id = evalRunA, BrandId = BrandA, CreatedAt = now, GitSha = "sha-a", PromptVersion = "unversioned", ModelName = "test", ModelVersion = "1", Temperature = 0, DatasetName = "tool-call-fixture", DatasetVersion = "1.0.0", DatasetSize = 3, Aggregates = new Dictionary<string, MetricAggregate> { ["Schema Validity"] = new(1.0, 1) } },
+            new EvalRun { Id = evalRunB, BrandId = BrandB, CreatedAt = now, GitSha = "sha-b", PromptVersion = "unversioned", ModelName = "test", ModelVersion = "1", Temperature = 0, DatasetName = "tool-call-fixture", DatasetVersion = "1.0.0", DatasetSize = 3, Aggregates = new Dictionary<string, MetricAggregate>() });
+        seed.EvalResults.AddRange(
+            new EvalResultRow { Id = Guid.NewGuid(), RunId = evalRunA, BrandId = BrandA, CaseId = "TC-001-happy", EvaluatorName = "Schema Validity", Score = 1.0, Reasoning = "ok", LatencyMs = 1 },
+            new EvalResultRow { Id = Guid.NewGuid(), RunId = evalRunB, BrandId = BrandB, CaseId = "TC-001-happy", EvaluatorName = "Schema Validity", Score = 1.0, Reasoning = "ok", LatencyMs = 1 });
+
         await seed.SaveChangesAsync();
     }
 }

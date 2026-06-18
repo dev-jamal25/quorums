@@ -17,6 +17,8 @@ public sealed class AppDbContext : DbContext
 {
     private static readonly JsonSerializerOptions _engagementKeysJsonOptions = new(JsonSerializerDefaults.Web);
 
+    private static readonly JsonSerializerOptions _evalJsonOptions = new(JsonSerializerDefaults.Web);
+
     public AppDbContext(DbContextOptions<AppDbContext> options)
         : base(options)
     {
@@ -46,6 +48,10 @@ public sealed class AppDbContext : DbContext
 
     public DbSet<EvalRecord> EvalRecords => Set<EvalRecord>();
 
+    public DbSet<EvalRun> EvalRuns => Set<EvalRun>();
+
+    public DbSet<EvalResultRow> EvalResults => Set<EvalResultRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -67,6 +73,33 @@ public sealed class AppDbContext : DbContext
                     v => JsonSerializer.Deserialize<EngagementKeys>(v, _engagementKeysJsonOptions)!)
                 .HasColumnType("jsonb");
             entity.HasIndex(e => e.ContentItemId);
+        });
+
+        // Phase-9 eval persistence (DL-051): the brand-scoped run store. Aggregate metrics and the
+        // per-result structured detail are small value objects serialized to jsonb (same idiom as
+        // PublishRecord.EngagementKeys). eval_results.run_id references eval_runs.id. RLS policies for
+        // both tables ride their creating migration via raw migrationBuilder.Sql.
+        modelBuilder.Entity<EvalRun>(entity =>
+        {
+            entity.Property(e => e.Aggregates)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, _evalJsonOptions),
+                    v => JsonSerializer.Deserialize<IReadOnlyDictionary<string, MetricAggregate>>(v, _evalJsonOptions)
+                        ?? new Dictionary<string, MetricAggregate>())
+                .HasColumnType("jsonb");
+        });
+
+        modelBuilder.Entity<EvalResultRow>(entity =>
+        {
+            entity.Property(e => e.Metadata)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, _evalJsonOptions),
+                    v => JsonSerializer.Deserialize<IReadOnlyDictionary<string, object>>(v, _evalJsonOptions))
+                .HasColumnType("jsonb");
+            entity.HasOne<EvalRun>()
+                .WithMany()
+                .HasForeignKey(e => e.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // RAG schema (DL-016, DL-026). The pgvector extension is created by the migration;

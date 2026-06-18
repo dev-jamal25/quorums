@@ -26,6 +26,12 @@
          Referenced now so the restore fetches them; the ChatQueryTransformer code lands with Task 6. -->
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Anthropic.SDK" />
+    <!-- Phase-9 eval suite (DL-053): custom rule-based IEvaluators + the disk reporting config +
+         response cache live here. .Quality is present for the later judge slice; .NLP (preview-only)
+         is deferred to the reference-based slice. -->
+    <PackageReference Include="Microsoft.Extensions.AI.Evaluation" />
+    <PackageReference Include="Microsoft.Extensions.AI.Evaluation.Quality" />
+    <PackageReference Include="Microsoft.Extensions.AI.Evaluation.Reporting" />
     <!-- Design-time only: the IDesignTimeDbContextFactory + migrations tooling.
          PrivateAssets=all keeps it out of Api/Worker publish output. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
