@@ -1,6 +1,7 @@
 using Backend.Api.Controllers;
 using Backend.Api.Dtos;
 using Backend.Core.Domain;
+using Backend.Core.Generation;
 using Backend.Core.Orchestration;
 using Backend.Core.Storage;
 using Backend.Infrastructure.Configuration.Options;
@@ -120,7 +121,10 @@ public sealed class RegenerateLoopTests
         await RegenerateAsync(runId, RegenerateMode.ReselectAngle, RegenerateModes.ReselectAngle);
 
         var regenerated = await _fixture.ReadCheckpointStateAsync(runId, _fixture.BrandA);
-        var expectedCaption = $"{regenerated!.Draft!.CaptionRef.Hook}\n\n{regenerated.Draft.CaptionRef.Body}";
+        // Hashtags publish inside the caption now (DL-055), so the wire caption is the composed text.
+        var expectedCaption = CaptionComposer.Compose(
+            $"{regenerated!.Draft!.CaptionRef.Hook}\n\n{regenerated.Draft.CaptionRef.Body}",
+            regenerated.Draft.CaptionRef.Hashtags);
 
         // Approve the regenerated draft, then run the publish segment with a capturing mock.
         var (gdb, gscope, gbrand) = _fixture.CreateGateDeps(_fixture.BrandA);

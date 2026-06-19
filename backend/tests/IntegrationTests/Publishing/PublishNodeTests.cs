@@ -40,7 +40,9 @@ public sealed class PublishNodeTests
 
         Assert.Equal(RunStatus.Done, await _fixture.ReadRunStatusAsync(runId, _fixture.BrandA));
         Assert.Equal(1, mock.PublishedMediaCount);
-        Assert.Equal("Draft hook\n\nDraft body", mock.LastRequest!.Caption);
+        // Hashtags publish INSIDE the caption (DL-055) — the wire caption carries them, composed.
+        Assert.Equal("Draft hook\n\nDraft body\n\n#draft", mock.LastRequest!.Caption);
+        Assert.Contains("#draft", mock.LastRequest.Caption, StringComparison.Ordinal);
         Assert.Equal(_draftTags, mock.LastRequest.Hashtags);
 
         var record = await ReadPublishRecordAsync(runId);
@@ -57,7 +59,7 @@ public sealed class PublishNodeTests
         var mock = new MockMetaIntegration();
         await ResumeAsync(runId, mock);
 
-        Assert.Equal("EDITED caption", mock.LastRequest!.Caption);
+        Assert.Equal("EDITED caption\n\n#edited", mock.LastRequest!.Caption);
         Assert.Equal(_editedTags, mock.LastRequest.Hashtags);
         Assert.Equal(RunStatus.Done, await _fixture.ReadRunStatusAsync(runId, _fixture.BrandA));
     }
@@ -72,7 +74,7 @@ public sealed class PublishNodeTests
         var mock = new MockMetaIntegration();
         await ResumeAsync(runId, mock);
 
-        Assert.Equal("SCHEDULED yet edited", mock.LastRequest!.Caption);
+        Assert.Equal("SCHEDULED yet edited\n\n#edited", mock.LastRequest!.Caption);
         Assert.Equal(_editedTags, mock.LastRequest.Hashtags);
     }
 
@@ -89,6 +91,23 @@ public sealed class PublishNodeTests
         Assert.Equal(0, mock.PublishAttemptCount);               // re-check fails before any publish
         Assert.Null(await ReadPublishRecordAsync(runId));        // the coordinator was never called
 
+        var state = await _fixture.ReadCheckpointStateAsync(runId, _fixture.BrandA);
+        Assert.Contains(state!.Errors, e => e.Code == "publish.constraint_violation");
+    }
+
+    [Fact]
+    public async Task Combined_caption_plus_hashtags_over_limit_is_terminal_with_no_publish()
+    {
+        // Caption alone fits (2198 <= 2200) but caption + the composed "#draft" exceeds 2200 — the
+        // combined publish-time check must fail before any Meta call (DL-055).
+        var runId = await SeedPublishableRunAsync(new string('x', 2195), "y", _draftTags);
+        await SeedApprovalAsync(runId, ApprovalActionType.Approve);
+
+        var mock = new MockMetaIntegration();
+        await ResumeAsync(runId, mock);
+
+        Assert.Equal(RunStatus.Failed, await _fixture.ReadRunStatusAsync(runId, _fixture.BrandA));
+        Assert.Equal(0, mock.PublishAttemptCount);               // never reached Meta
         var state = await _fixture.ReadCheckpointStateAsync(runId, _fixture.BrandA);
         Assert.Contains(state!.Errors, e => e.Code == "publish.constraint_violation");
     }

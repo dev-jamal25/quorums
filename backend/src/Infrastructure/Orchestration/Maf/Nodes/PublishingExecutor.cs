@@ -1,4 +1,5 @@
 using Backend.Core.Domain;
+using Backend.Core.Generation;
 using Backend.Core.Generation.PlatformConstraints;
 using Backend.Core.Integrations;
 using Backend.Core.Multitenancy;
@@ -119,11 +120,20 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
                 "publish.surface_unconfigured", cancellationToken).ConfigureAwait(false);
         }
 
+        // Hashtags live INSIDE the caption on IG/FB — neither channel has a separate hashtags param
+        // (DL-055) — so compose them into the wire caption. Re-check the caption alone, the hashtag
+        // COUNT, AND the COMBINED length against the cap (a near-limit caption + hashtags must fail here,
+        // before any Meta call, not at Meta).
+        var composedCaption = CaptionComposer.Compose(effectiveCaption, effectiveHashtags);
+
         var captionCheck = PlatformConstraintValidator.ValidateCaptionLength(effectiveCaption, surfaceConstraints);
         var hashtagCheck = PlatformConstraintValidator.ValidateHashtags(effectiveHashtags, surfaceConstraints);
-        if (!captionCheck.IsValid || !hashtagCheck.IsValid)
+        var composedCheck = PlatformConstraintValidator.ValidateCaptionLength(composedCaption, surfaceConstraints);
+        if (!captionCheck.IsValid || !hashtagCheck.IsValid || !composedCheck.IsValid)
         {
-            var detail = !captionCheck.IsValid ? captionCheck.Error : hashtagCheck.Error;
+            var detail = !captionCheck.IsValid ? captionCheck.Error
+                : !hashtagCheck.IsValid ? hashtagCheck.Error
+                : composedCheck.Error;
             return await FinishAsync(
                 state, startedAt, Terminal(detail ?? "publish-time constraint violation"),
                 "publish.constraint_violation", cancellationToken).ConfigureAwait(false);
@@ -154,8 +164,8 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
                 TargetId: targetId,
                 Surface: MapSurface(state.TargetSurface),
                 MediaUrl: mediaUrl,
-                Caption: effectiveCaption,
-                Hashtags: effectiveHashtags,
+                Caption: composedCaption,        // caption + hashtags as one string — the published text
+                Hashtags: effectiveHashtags,     // structured list retained for the record/observability
                 AccessToken: accessToken);
 
             result = await _coordinator
