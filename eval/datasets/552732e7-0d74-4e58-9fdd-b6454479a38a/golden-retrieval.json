@@ -1,0 +1,101 @@
+{
+  "_meta": {
+    "name": "golden-retrieval",
+    "version": "1.0.0",
+    "created_at": "2026-06-19",
+    "size": 10,
+    "criteria": "Hand-labeled hold-out golden retrieval set; near-complete relevance labeling (each query judged against all 13 chunks); relevance = direct satisfaction of the information need, not topical overlap; never tuned against."
+  },
+  "cases": [
+    {
+      "id": "GR-01",
+      "input": { "query": "a delicate floral cup with jasmine and bright citrus" },
+      "expected": { "relevant_chunk_ids": ["169a943d-f805-494c-168f-594e1a132bb5"] },
+      "tags": ["dense", "product"],
+      "notes": "Distinctive product vocabulary maps to the Yirgacheffe single origin (dense nearest-neighbour).",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "GR-02",
+      "input": { "query": "smooth low-acid coffee for late evenings" },
+      "expected": { "relevant_chunk_ids": ["c3346de4-5af3-3570-01f7-7f1b851c1c61"] },
+      "tags": ["dense", "product"],
+      "notes": "Low-acid / late-evening need is satisfied only by the Midnight Decaf product.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "GR-03",
+      "input": { "query": "kraft tones, natural light, texture over gloss" },
+      "expected": { "relevant_chunk_ids": ["e264bc96-961d-bd2b-4ca0-5a38ac2aebce"] },
+      "tags": ["sparse", "playbook"],
+      "notes": "Exact visual-style phrasing — a sparse/FTS-leaning hit on the Visual Style playbook chunk.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "GR-04",
+      "input": { "query": "the latest specialty coffee market trend" },
+      "expected": { "relevant_chunk_ids": ["87ee333d-316f-bf09-b65d-6baaffef6c3a"] },
+      "tags": ["recency"],
+      "notes": "Two near-identical market-intel docs share the term; 'latest' must pick the fresher 2026 one.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "GR-05",
+      "input": { "query": "what makes our single-origin coffee special and worth the price" },
+      "expected": { "relevant_chunk_ids": ["9eb2e560-2c2a-657e-0816-5c35f2d0ed6e", "169a943d-f805-494c-168f-594e1a132bb5"] },
+      "tags": ["rerank"],
+      "notes": "Spans the Mission (why single-origin) and the Yirgacheffe product (what's special) — rewards re-ranking both above topical noise.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "GR-06",
+      "input": { "query": "brand voice, tone, do and don't language, and product details" },
+      "expected": { "relevant_chunk_ids": ["d600575c-ac54-31f7-f6d3-07a7d99edbc3", "169a943d-f805-494c-168f-594e1a132bb5", "a0538fd3-f1bc-a3d3-dfc2-69da70d5b25d", "c3346de4-5af3-3570-01f7-7f1b851c1c61"] },
+      "tags": ["broad", "copywriting"],
+      "notes": "The Copywriting agent's real information need — Brand Voice + all three products.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "GR-07",
+      "input": { "query": "brand visual style, imagery, colour palette, and product look" },
+      "expected": { "relevant_chunk_ids": ["e264bc96-961d-bd2b-4ca0-5a38ac2aebce", "169a943d-f805-494c-168f-594e1a132bb5", "a0538fd3-f1bc-a3d3-dfc2-69da70d5b25d", "c3346de4-5af3-3570-01f7-7f1b851c1c61"] },
+      "tags": ["broad", "creative-director"],
+      "notes": "The Creative Director's real information need — Visual Style + all three products.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "GR-08",
+      "input": { "query": "which past post drove the most engagement" },
+      "expected": { "relevant_chunk_ids": ["cce240c1-308f-11d5-f52a-fbad40db923f"] },
+      "tags": ["performance"],
+      "notes": "Performance need: the Pour Over Sunday post has the higher engagement_rate of the two historical posts.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "GR-09",
+      "input": { "query": "who are we talking to — our audience" },
+      "expected": { "relevant_chunk_ids": ["3432904c-d0ae-6c65-2b75-4be1e4bc2424"] },
+      "tags": ["single"],
+      "notes": "Audience need maps to the Audience Persona playbook chunk.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "GR-10",
+      "input": { "query": "how often and when should we post to the feed" },
+      "expected": { "relevant_chunk_ids": ["8e8837db-79b5-eefb-3372-39aed6e1fc6a"] },
+      "tags": ["single"],
+      "notes": "Cadence/timing need maps to the Feed Cadence platform-guidance chunk.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    }
+  ]
+}

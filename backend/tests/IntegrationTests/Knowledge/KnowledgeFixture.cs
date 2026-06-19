@@ -52,6 +52,10 @@ public sealed class KnowledgeFixture : IAsyncLifetime
 
     public Guid BrandWithNoCorpus { get; } = Guid.NewGuid();
 
+    /// <summary>The fixed demo brand the committed golden/adversarial datasets are authored against
+    /// (<c>eval/datasets/552732e7-…</c>). Seeded with exactly the 13 CoffeeRoasterCorpus chunks.</summary>
+    public static Guid DemoBrand { get; } = Guid.Parse("552732e7-0d74-4e58-9fdd-b6454479a38a");
+
     /// <summary>Query built from Brand A's distinctive Yirgacheffe product vocabulary.</summary>
     public string BrandAProductQuery { get; } = CoffeeRoasterCorpus.RelevanceQuery;
 
@@ -81,6 +85,23 @@ public sealed class KnowledgeFixture : IAsyncLifetime
         // Both brands get the identical corpus, so the leakage proof is separated by RLS alone.
         await SeedCorpusAsync(BrandA);
         await SeedCorpusAsync(BrandB);
+
+        // The fixed demo brand the committed datasets target: exactly the 13 CoffeeRoasterCorpus chunks.
+        await SeedCorpusAsync(DemoBrand);
+    }
+
+    /// <summary>The chunk ids actually seeded for a brand, read under that brand's RLS scope.</summary>
+    public async Task<IReadOnlyCollection<Guid>> SeededChunkIdsAsync(Guid brandId)
+    {
+        var db = CreateDbContext(AppUserConnectionString);
+        await using (db)
+        {
+            var brandContext = new BrandContext();
+            brandContext.Bind(brandId);
+            var scope = new BrandScope(db, brandContext);
+            await using var handle = await scope.BeginAsync();
+            return await db.KnowledgeChunks.AsNoTracking().Select(c => c.Id).ToListAsync();
+        }
     }
 
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
@@ -177,7 +198,8 @@ public sealed class KnowledgeFixture : IAsyncLifetime
         seed.Brands.AddRange(
             new Brand { Id = BrandA, Name = "Roaster A", CreatedAt = now },
             new Brand { Id = BrandB, Name = "Roaster B", CreatedAt = now },
-            new Brand { Id = BrandWithNoCorpus, Name = "Empty Roaster", CreatedAt = now });
+            new Brand { Id = BrandWithNoCorpus, Name = "Empty Roaster", CreatedAt = now },
+            new Brand { Id = DemoBrand, Name = "Demo Roaster", CreatedAt = now });
 
         await seed.SaveChangesAsync();
     }
