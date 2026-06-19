@@ -1,0 +1,20 @@
+{
+  "_meta": {
+    "name": "adversarial",
+    "version": "1.0.0",
+    "created_at": "2026-06-19",
+    "size": 1,
+    "criteria": "Retrieval/grounding adversarials for the demo brand."
+  },
+  "cases": [
+    {
+      "id": "ADV-01-no-answer",
+      "input": { "query": "what's the return policy for damaged bags" },
+      "expected": { "relevant_chunk_ids": [] },
+      "tags": ["adversarial", "no-answer", "grounding"],
+      "notes": "Corpus can't answer; the system must retrieve nothing relevant and the agent must NOT fabricate grounding (grounded=false, no claimed ids).",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    }
+  ]
+}
