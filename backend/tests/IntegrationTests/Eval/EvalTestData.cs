@@ -86,6 +86,7 @@ internal static class EvalTestData
             Budget: new Budget(TokenBudget: 10_000, TokensSpent: 100, MediaBudget: 1.00m, MediaSpent: 0.04m),
             Errors: [],
             FatalError: null,
+            ClaimedChunkIdsByNode: new Dictionary<string, IReadOnlyList<string>>(),
             InjectedChunkIdsByNode: new Dictionary<string, IReadOnlyList<string>>(),
             RetryCountsByNode: new Dictionary<string, int>(),
             Trace: new TraceRefs(string.Empty, [], []));

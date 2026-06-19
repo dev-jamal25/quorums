@@ -15,6 +15,7 @@ namespace Backend.IntegrationTests.Eval;
 /// Proves a failed run still persists with its git SHA + dataset version. Deterministic → zero API spend.
 /// </summary>
 [Trait("Category", "Eval")]
+[Collection("EvalGeneration")]
 public sealed class EvalHarnessIntegrationTests : IClassFixture<EvalFixture>
 {
     private const int CaseCount = 3;     // fixture dataset
@@ -59,11 +60,11 @@ public sealed class EvalHarnessIntegrationTests : IClassFixture<EvalFixture>
     public async Task Forced_violation_reds_the_metric_yet_the_failed_run_still_persists()
     {
         // Forced schema violation: the Content Strategist tool fails on every attempt.
-        var (deps, retrieval, chat) = TestGeneration.EvalDeps(failTools: ["record_strategy_candidates"]);
+        var (deps, chat) = TestGeneration.EvalDeps(failTools: ["record_strategy_candidates"]);
         var orchestrator = TestGeneration.Orchestrator(deps);
         var state = await orchestrator.RunGenerationAsync(TestGeneration.Seed(Guid.NewGuid(), _fixture.BrandId));
-        var (injected, retries) = TestGeneration.OffState(retrieval, chat);
-        var output = SystemOutputProjector.Project(state, injected, retries);
+        var retries = TestGeneration.OffStateRetries(chat);
+        var output = SystemOutputProjector.Project(state, retries);
 
         // The schema-validity metric is RED on this bad output, and the strategist retried exactly twice.
         var (messages, response) = EvalTestData.Conversation();
@@ -96,11 +97,10 @@ public sealed class EvalHarnessIntegrationTests : IClassFixture<EvalFixture>
 
     private async Task<SystemOutput> RunMockGenerationAsync()
     {
-        var (deps, retrieval, chat) = TestGeneration.EvalDeps();
+        var (deps, chat) = TestGeneration.EvalDeps();
         var orchestrator = TestGeneration.Orchestrator(deps);
         var state = await orchestrator.RunGenerationAsync(TestGeneration.Seed(Guid.NewGuid(), _fixture.BrandId));
-        var (injected, retries) = TestGeneration.OffState(retrieval, chat);
-        return SystemOutputProjector.Project(state, injected, retries);
+        return SystemOutputProjector.Project(state, TestGeneration.OffStateRetries(chat));
     }
 
     private async Task<Backend.Core.Domain.EvalRun> RunHarnessAsync(

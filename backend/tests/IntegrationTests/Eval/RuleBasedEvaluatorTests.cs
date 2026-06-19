@@ -107,11 +107,9 @@ public sealed class RuleBasedEvaluatorTests
         var output = EvalTestData.ValidOutput();
         var adversarial = output with
         {
-            Caption = output.Caption! with { Grounding = new Grounding(Grounded: true, ChunkIdsUsed: ["ghost-chunk"], Confidence.High) },
-            InjectedChunkIdsByNode = new Dictionary<string, IReadOnlyList<string>>
-            {
-                [SystemOutput.Nodes.Copywriting] = ["real-chunk"],
-            },
+            // raw claimed (from DL-054 provenance) cites a chunk id never injected for this node.
+            ClaimedChunkIdsByNode = new Dictionary<string, IReadOnlyList<string>> { [SystemOutput.Nodes.Copywriting] = ["ghost-chunk"] },
+            InjectedChunkIdsByNode = new Dictionary<string, IReadOnlyList<string>> { [SystemOutput.Nodes.Copywriting] = ["real-chunk"] },
         };
         Assert.False(await PassedAsync(evaluator, adversarial, GroundingHonestyEvaluator.MetricNameConst));
     }
@@ -125,7 +123,7 @@ public sealed class RuleBasedEvaluatorTests
         var output = EvalTestData.ValidOutput();
         var adversarial = output with
         {
-            Caption = output.Caption! with { Grounding = new Grounding(Grounded: true, ChunkIdsUsed: ["cd-only"], Confidence.High) },
+            ClaimedChunkIdsByNode = new Dictionary<string, IReadOnlyList<string>> { [SystemOutput.Nodes.Copywriting] = ["cd-only"] },
             InjectedChunkIdsByNode = new Dictionary<string, IReadOnlyList<string>>
             {
                 [SystemOutput.Nodes.CreativeDirector] = ["cd-only"], // injected for node Y only

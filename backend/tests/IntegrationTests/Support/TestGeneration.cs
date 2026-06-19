@@ -55,21 +55,23 @@ internal static class TestGeneration
     }
 
     /// <summary>
-    /// Eval variant: deterministic deps wired with the read-only recording doubles (Option A) so a test
-    /// can run a mock-mode generation and then read the two off-state fields — injected provenance ids
-    /// (from the recording retrieval) and per-node retry counts (from the call-counting chat client) —
-    /// that are not recoverable from RunState/trace. No production code or frozen contract changes.
+    /// Eval variant: deterministic deps for a mock-mode generation. Per-node grounding provenance now
+    /// rides the durable trace (DL-054) — no injected-id recording double — so a test reads injected +
+    /// claimed ids from the projected trace. The <see cref="CountingChatClient"/> is retained for the
+    /// per-node retry counts (not on the trace). <paramref name="retrieval"/> + <paramref name="groundingClaim"/>
+    /// let the grounding-honesty proof inject a known set and make the model claim chosen ids.
     /// </summary>
-    public static (GenerationAgentDeps Deps, RecordingRetrievalService Retrieval, CountingChatClient Chat) EvalDeps(
+    public static (GenerationAgentDeps Deps, CountingChatClient Chat) EvalDeps(
         IEnumerable<string>? failTools = null,
         IEnumerable<string>? flakyTools = null,
-        decimal globalCeilingUsd = 1.00m)
+        decimal globalCeilingUsd = 1.00m,
+        IRetrievalService? retrieval = null,
+        IEnumerable<string>? groundingClaim = null)
     {
-        var chat = new CountingChatClient(new DeterministicGenerationChatClient(failTools, flakyTools));
-        var retrieval = new RecordingRetrievalService(new FakeRetrievalService());
+        var chat = new CountingChatClient(new DeterministicGenerationChatClient(failTools, flakyTools, groundingClaim));
         var deps = new GenerationAgentDeps(
             Generator: new ForcedToolGenerator(chat),
-            Retrieval: retrieval,
+            Retrieval: retrieval ?? new FakeRetrievalService(),
             Media: new DeterministicMediaGenerationTool(),
             Storage: new InMemoryStorageService(),
             Constraints: Constraints(),
@@ -79,30 +81,18 @@ internal static class TestGeneration
             HaikuModel: HaikuModel,
             Trace: new LocalTraceRecorder(),
             LoggerFactory: NullLoggerFactory.Instance);
-        return (deps, retrieval, chat);
+        return (deps, chat);
     }
 
-    /// <summary>Projects the two off-state fields from the recording doubles, keyed by graph node.</summary>
-    public static (IReadOnlyDictionary<string, IReadOnlyList<string>> Injected, IReadOnlyDictionary<string, int> Retries) OffState(
-        RecordingRetrievalService retrieval, CountingChatClient chat)
-    {
-        var injected = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
-        {
-            [SystemOutput.Nodes.ContentStrategist] = retrieval.AllProvenanceIds,
-            [SystemOutput.Nodes.CreativeDirector] = retrieval.AllProvenanceIds,
-            [SystemOutput.Nodes.Copywriting] = retrieval.AllProvenanceIds,
-        };
-
-        var retries = new Dictionary<string, int>(StringComparer.Ordinal)
+    /// <summary>Per-node retry counts from the call-counting chat client (retries = attempts - 1).</summary>
+    public static IReadOnlyDictionary<string, int> OffStateRetries(CountingChatClient chat) =>
+        new Dictionary<string, int>(StringComparer.Ordinal)
         {
             [SystemOutput.Nodes.ContentStrategist] = chat.RetriesForTool("record_strategy_candidates"),
             [SystemOutput.Nodes.SupervisorSelection] = chat.RetriesForTool("record_selection"),
             [SystemOutput.Nodes.CreativeDirector] = chat.RetriesForTool("record_creative_direction"),
             [SystemOutput.Nodes.Copywriting] = chat.RetriesForTool("record_caption"),
         };
-
-        return (injected, retries);
-    }
 
     /// <summary>
     /// Builds the real <see cref="MafOrchestrator"/>. Generation-only tests omit the publish deps

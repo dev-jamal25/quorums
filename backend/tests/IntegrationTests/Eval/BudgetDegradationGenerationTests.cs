@@ -14,12 +14,13 @@ namespace Backend.IntegrationTests.Eval;
 /// passes on the projected run. Deterministic clients only → zero API spend.
 /// </summary>
 [Trait("Category", "Eval")]
+[Collection("EvalGeneration")]
 public sealed class BudgetDegradationGenerationTests
 {
     [Fact]
     public async Task Media_budget_breach_degrades_to_caption_only_with_zero_gemini_calls()
     {
-        var (deps, retrieval, chat) = TestGeneration.EvalDeps();
+        var (deps, chat) = TestGeneration.EvalDeps();
         var orchestrator = TestGeneration.Orchestrator(deps);
 
         // MediaBudget (0.01) < GeminiPerImage (0.04) → unaffordable at the pre-Media gate (not fatal).
@@ -30,8 +31,7 @@ public sealed class BudgetDegradationGenerationTests
 
         var state = await orchestrator.RunGenerationAsync(seed);
 
-        var (injected, retries) = TestGeneration.OffState(retrieval, chat);
-        var output = SystemOutputProjector.Project(state, injected, retries);
+        var output = SystemOutputProjector.Project(state, TestGeneration.OffStateRetries(chat));
 
         Assert.Null(state.FatalError);
         Assert.True(output.BudgetDegraded);

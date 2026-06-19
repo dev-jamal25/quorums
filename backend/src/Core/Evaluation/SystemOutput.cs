@@ -35,8 +35,10 @@ public sealed record SystemOutput(
     // -- failure isolation --
     IReadOnlyList<ToolError> Errors,
     ToolError? FatalError,
-    // -- off-state fields (recording doubles, mock mode) --
+    // -- per-node grounding provenance, read from the durable trace (DL-054) --
+    IReadOnlyDictionary<string, IReadOnlyList<string>> ClaimedChunkIdsByNode,
     IReadOnlyDictionary<string, IReadOnlyList<string>> InjectedChunkIdsByNode,
+    // -- retry counts (still from the mock-mode call-counting chat client) --
     IReadOnlyDictionary<string, int> RetryCountsByNode,
     // -- raw trace (for span-level assertions) --
     TraceRefs Trace)

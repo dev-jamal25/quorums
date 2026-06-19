@@ -5,11 +5,14 @@ using Backend.Core.Orchestration.Contracts;
 namespace Backend.Infrastructure.Evaluation.Evaluators;
 
 /// <summary>
-/// §1.6 Grounding honesty (DL-034) — the deterministic faithfulness floor: a node's claimed
-/// <c>grounded</c> set must equal <c>claimedChunkIds ∩ injectedChunkIds</c>, i.e. no output may cite a
-/// chunk id that was not injected into its prompt, and <c>grounded</c> must be derived correctly.
-/// Re-runs the same <see cref="GroundingValidator.Reconcile"/> the pipeline uses against the injected
-/// provenance ids per node (mock-mode recording double) and fails on any divergence.
+/// §1.6 Grounding honesty (DL-034 / DL-054) — the deterministic faithfulness floor. Audits the
+/// <b>raw, pre-reconcile</b> claimed chunk ids against the injected ids, <b>per node</b>: a node that
+/// claimed a chunk id not injected into its prompt is a faithfulness violation. The claimed + injected
+/// sets are sourced from the durable per-node trace provenance (DL-054) via
+/// <see cref="SystemOutput.ClaimedChunkIdsByNode"/> / <see cref="SystemOutput.InjectedChunkIdsByNode"/> —
+/// NOT the output's post-reconcile <c>chunkIdsUsed</c>, which the pipeline already reduced to
+/// <c>claimed ∩ injected</c> (⊆ injected by construction, so a check against it passes trivially).
+/// Delegates the intersection to the same <see cref="GroundingValidator.Reconcile"/> the pipeline uses.
 /// </summary>
 public sealed class GroundingHonestyEvaluator : SystemOutputEvaluator
 {
@@ -19,41 +22,30 @@ public sealed class GroundingHonestyEvaluator : SystemOutputEvaluator
 
     protected override Verdict Evaluate(SystemOutput output, EvalCase evalCase)
     {
-        var checks = new (string Node, Grounding? Grounding)[]
+        foreach (var (node, claimed) in output.ClaimedChunkIdsByNode)
         {
-            (SystemOutput.Nodes.ContentStrategist, output.Strategy?.Grounding),
-            (SystemOutput.Nodes.CreativeDirector, output.Creative?.Grounding),
-            (SystemOutput.Nodes.Copywriting, output.Caption?.Grounding),
-        };
-
-        foreach (var (node, grounding) in checks)
-        {
-            if (grounding is null)
-            {
-                continue;
-            }
-
             var injected = output.InjectedChunkIdsByNode.TryGetValue(node, out var ids) ? ids : [];
-            if (!IsHonest(grounding, injected))
+            if (!IsSubset(claimed, injected))
             {
+                var unsupported = claimed.Where(id => !injected.Contains(id, StringComparer.Ordinal));
                 return Verdict.Fail(
-                    $"node '{node}' claims chunk ids outside its injected set or mis-derives grounded "
-                    + $"(claimed=[{string.Join(",", grounding.ChunkIdsUsed)}], injected=[{string.Join(",", injected)}])");
+                    $"node '{node}' claims chunk ids not injected into its prompt "
+                    + $"[{string.Join(",", unsupported)}] (claimed=[{string.Join(",", claimed)}], injected=[{string.Join(",", injected)}])");
             }
         }
 
-        return Verdict.Pass("every output's grounded set equals claimed ∩ injected");
+        return Verdict.Pass("every node's raw claimed ids are a subset of its injected ids");
     }
 
-    private static bool IsHonest(Grounding grounding, IReadOnlyList<string> injectedProvenanceIds)
+    // raw claimed ⊆ injected, via the same reconcile (claimed ∩ injected) the pipeline applies:
+    // claimed ⊆ injected iff (claimed ∩ injected) == claimed as sets.
+    private static bool IsSubset(IReadOnlyList<string> claimed, IReadOnlyList<string> injected)
     {
-        var reconciled = GroundingValidator.Reconcile(grounding, injectedProvenanceIds);
+        var reconciled = GroundingValidator.Reconcile(
+            new Grounding(Grounded: true, ChunkIdsUsed: claimed, Confidence.Low), injected);
 
-        var claimed = new HashSet<string>(grounding.ChunkIdsUsed ?? [], StringComparer.Ordinal);
-        var kept = new HashSet<string>(reconciled.ChunkIdsUsed, StringComparer.Ordinal);
-
-        // claimed == (claimed ∩ injected) means no claimed id was dropped (claimed ⊆ injected);
-        // and the derived grounded flag must match what the output asserted.
-        return claimed.SetEquals(kept) && reconciled.Grounded == grounding.Grounded;
+        var claimedSet = new HashSet<string>(claimed ?? [], StringComparer.Ordinal);
+        var keptSet = new HashSet<string>(reconciled.ChunkIdsUsed, StringComparer.Ordinal);
+        return claimedSet.SetEquals(keptSet);
     }
 }
