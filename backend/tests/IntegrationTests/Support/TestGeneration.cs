@@ -104,8 +104,16 @@ internal static class TestGeneration
         PublishCoordinator? coordinator = null,
         AppDbContext? db = null,
         IBrandScope? scope = null,
-        ISecretsProvider? secrets = null)
-        => new(deps, coordinator!, db!, scope!, secrets ?? new PassthroughSecretsProvider());
+        ISecretsProvider? secrets = null,
+        string publicBaseUrl = "")
+        => new(
+            deps,
+            coordinator!,
+            db!,
+            scope!,
+            secrets ?? new PassthroughSecretsProvider(),
+            Microsoft.Extensions.Options.Options.Create(
+                new Backend.Infrastructure.Configuration.Options.StorageOptions { PublicBaseUrl = publicBaseUrl }));
 
     public static CostPrices Prices() => new(
         SonnetInputPerMTok: 3m,

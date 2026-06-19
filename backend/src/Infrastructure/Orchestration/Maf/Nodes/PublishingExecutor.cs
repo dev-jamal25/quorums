@@ -32,6 +32,7 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
     private readonly PlatformConstraintSet _constraints;
     private readonly ISecretsProvider _secrets;
     private readonly ITrace _trace;
+    private readonly string _publicBaseUrl;
 
     public PublishingExecutor(
         PublishCoordinator coordinator,
@@ -39,7 +40,8 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
         IBrandScope scope,
         PlatformConstraintSet constraints,
         ISecretsProvider secrets,
-        ITrace trace)
+        ITrace trace,
+        string publicBaseUrl)
         : base("publishing")
     {
         _coordinator = coordinator;
@@ -48,6 +50,7 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
         _constraints = constraints;
         _secrets = secrets;
         _trace = trace;
+        _publicBaseUrl = publicBaseUrl;
     }
 
     public override ValueTask<RunState> HandleAsync(
@@ -126,22 +129,31 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
                 "publish.constraint_violation", cancellationToken).ConfigureAwait(false);
         }
 
-        // 5) Publish each target channel as its own (contentItemId, channel) unit through the coordinator
-        //    (idempotency + PublishRecord persistence owned there, DL-055). Slice 1 has no per-content
-        //    channel source yet (DL-055 stop/ask #1), so the set is IG-only; Slice 2 supplies the real
-        //    multi-channel set from BrandMetaConnection. The loop shape is what Slice 2 feeds. The
-        //    dual-channel idempotency proof drives the coordinator per channel directly.
-        var channels = new[] { PublishChannel.Instagram };
+        // 5) Resolve the brand's connected channels from BrandMetaConnection (DL-055): Instagram when an
+        //    IG Business Account id is set, Facebook Page when a Page id is set. Each is its own
+        //    (contentItemId, channel) crash-safe unit. No connected channel → terminal, no publish.
+        var channels = ResolveChannels(connection);
+        if (channels.Count == 0)
+        {
+            return await FinishAsync(
+                state, startedAt,
+                Terminal("No Meta channel is connected for this brand (set a Facebook Page id and/or IG Business Account id)."),
+                "meta.no_channel", cancellationToken).ConfigureAwait(false);
+        }
+
+        // The Meta-reachable public URL Meta fetches server-side: {Storage:PublicBaseUrl} + the brand-
+        // prefixed asset key (DL-055). Empty base (CI/mock) leaves the bare key — the mock ignores it.
+        var mediaUrl = BuildMediaUrl(state.Draft?.MediaRef?.StorageKey ?? state.Media?.StorageKey ?? string.Empty);
 
         PublishResult? result = null;
-        foreach (var channel in channels)
+        foreach (var (channel, targetId) in channels)
         {
             var request = new PublishRequest(
                 ContentItemId: state.RunId,
                 Channel: channel,
-                TargetId: PlaceholderTargetId,
+                TargetId: targetId,
                 Surface: MapSurface(state.TargetSurface),
-                MediaUrl: state.Draft?.MediaRef?.StorageKey ?? state.Media?.StorageKey ?? string.Empty,
+                MediaUrl: mediaUrl,
                 Caption: effectiveCaption,
                 Hashtags: effectiveHashtags,
                 AccessToken: accessToken);
@@ -157,8 +169,8 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
             }
         }
 
-        // 6) Record the classified result; ResumeRun maps it to Done/Failed/retry. `channels` is a
-        //    non-empty constant, so `result` is always assigned.
+        // 6) Record the classified result; ResumeRun maps it to Done/Failed/retry. `channels` is
+        //    non-empty here (guarded above), so `result` is always assigned.
         return await FinishAsync(state, startedAt, result!, "meta.publish_failed", cancellationToken).ConfigureAwait(false);
     }
 
@@ -191,9 +203,30 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
         };
     }
 
-    // TargetId is part of the DL-055 contract shape but is NOT consumed by the mock; Slice 2 resolves
-    // the real per-brand target (IG Business Account id / Page id) from BrandMetaConnection.
-    private const string PlaceholderTargetId = "placeholder";
+    // The brand's connected channels and their TargetIds, derived from BrandMetaConnection (DL-055):
+    // Instagram when an IG Business Account id is present, Facebook Page when a Page id is present.
+    private static List<(PublishChannel Channel, string TargetId)> ResolveChannels(BrandMetaConnection connection)
+    {
+        var channels = new List<(PublishChannel, string)>(2);
+        if (!string.IsNullOrWhiteSpace(connection.IgBusinessAccountId))
+        {
+            channels.Add((PublishChannel.Instagram, connection.IgBusinessAccountId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(connection.FacebookPageId))
+        {
+            channels.Add((PublishChannel.FacebookPage, connection.FacebookPageId));
+        }
+
+        return channels;
+    }
+
+    // {Storage:PublicBaseUrl}/brands/{brand_id}/assets/{asset_id}.png (DL-055). An empty base leaves the
+    // bare storage key (CI/mock, where MediaUrl is ignored).
+    private string BuildMediaUrl(string storageKey) =>
+        string.IsNullOrEmpty(_publicBaseUrl)
+            ? storageKey
+            : $"{_publicBaseUrl.TrimEnd('/')}/{storageKey.TrimStart('/')}";
 
     private static string Compose(string hook, string body) => $"{hook}\n\n{body}";
 

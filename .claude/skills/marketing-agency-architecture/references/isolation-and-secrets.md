@@ -87,13 +87,20 @@ Tokens are **tenant data, not app config**:
 
 ```
 PostgreSQL: BrandMetaConnection (EF entity)
-  brand_id (RLS) | token_ciphertext | token_type | expires_at | scopes | rotated_at
+  brand_id (RLS) | token_ciphertext | token_type
+                 | facebook_page_id | ig_business_account_id   ← non-secret channel target ids (DL-055)
+                 | expires_at | scopes | rotated_at
 
 Vault Transit:
   - owns the encryption key (transit/keys/brand-tokens)
   - encrypt on store, decrypt only at the moment of a Meta call
   - every decrypt is audited
 ```
+
+- `facebook_page_id` / `ig_business_account_id` are the per-channel **`TargetId`s** (DL-055): the
+  Facebook Page id and the Instagram Business Account id the live `IMetaIntegration` posts to. They are
+  **public, non-secret identifiers** — plain columns, never Transit ciphertext. The token alone is the
+  secret. A brand's connected channel set is derived from which of these is present.
 
 - Decrypt **only inside `IMetaIntegration` at call time**. Never cache the
   plaintext to disk or logs.

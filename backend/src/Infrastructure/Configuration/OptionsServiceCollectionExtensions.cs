@@ -22,6 +22,8 @@ public static class OptionsServiceCollectionExtensions
         services.AddValidatedOptions<AnthropicOptions>(configuration, AnthropicOptions.SectionName);
         services.AddValidatedOptions<GeminiOptions>(configuration, GeminiOptions.SectionName);
         services.AddValidatedOptions<MinioOptions>(configuration, MinioOptions.SectionName);
+        // Non-secret public asset origin for the live Meta MediaUrl (DL-055); optional (empty in mock/CI).
+        services.AddValidatedOptions<StorageOptions>(configuration, StorageOptions.SectionName);
         services.AddValidatedOptions<RedisOptions>(configuration, RedisOptions.SectionName);
         services.AddValidatedOptions<EmbeddingsOptions>(configuration, EmbeddingsOptions.SectionName);
         services.AddValidatedOptions<RetrievalOptions>(configuration, RetrievalOptions.SectionName);

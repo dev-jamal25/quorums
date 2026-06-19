@@ -16,6 +16,19 @@ public sealed class BrandMetaConnection : IBrandScoped
 
     public string TokenType { get; set; } = default!;
 
+    /// <summary>
+    /// Facebook Page id — the <c>TargetId</c> for the Facebook channel publish (DL-055). Non-secret
+    /// (a public Page identifier), so it is a plain column, not Transit ciphertext. Null when the
+    /// brand has no connected Facebook Page.
+    /// </summary>
+    public string? FacebookPageId { get; set; }
+
+    /// <summary>
+    /// Instagram Business Account id — the <c>TargetId</c> for the Instagram channel publish (DL-055).
+    /// Non-secret (a public account identifier). Null when the brand has no connected Instagram account.
+    /// </summary>
+    public string? IgBusinessAccountId { get; set; }
+
     public DateTimeOffset? ExpiresAt { get; set; }
 
     public string? Scopes { get; set; }

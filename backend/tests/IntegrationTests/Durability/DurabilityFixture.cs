@@ -51,6 +51,18 @@ public sealed class DurabilityFixture : IAsyncLifetime
 
     public Task DisposeAsync() => _container.DisposeAsync().AsTask();
 
+    /// <summary>
+    /// Seeds a throwaway brand (superuser, bypassing RLS) for tests that must NOT mutate the shared
+    /// BrandA/BrandB connections — e.g. the brand-connection seeding test, which would otherwise leave
+    /// a second channel on a shared brand and double-publish later collection tests.
+    /// </summary>
+    public async Task SeedBrandAsync(Guid brandId, string name)
+    {
+        await using var db = CreateDbContext(SuperuserConnectionString);
+        db.Brands.Add(new Brand { Id = brandId, Name = name, CreatedAt = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync();
+    }
+
     public async Task<Guid> SeedAgentRunAsync(Guid brandId, RunStatus status = RunStatus.Queued)
     {
         await using var db = CreateDbContext(SuperuserConnectionString);
@@ -243,10 +255,12 @@ public sealed class DurabilityFixture : IAsyncLifetime
             new Brand { Id = BrandB, Name = "Brand B", CreatedAt = now });
 
         // A demo Meta connection per brand so the publish path resolves a token (dev passthrough
-        // ciphertext == plaintext). Seeded via superuser (bypasses RLS), like the brands themselves.
+        // ciphertext == plaintext) and one connected channel (an IG Business Account id so the node
+        // resolves Instagram, DL-055; the mock ignores the value). Seeded via superuser (bypasses RLS),
+        // like the brands themselves.
         seed.BrandMetaConnections.AddRange(
-            new BrandMetaConnection { Id = Guid.NewGuid(), BrandId = BrandA, TokenCiphertext = "demo-meta-token", TokenType = "bearer" },
-            new BrandMetaConnection { Id = Guid.NewGuid(), BrandId = BrandB, TokenCiphertext = "demo-meta-token", TokenType = "bearer" });
+            new BrandMetaConnection { Id = Guid.NewGuid(), BrandId = BrandA, TokenCiphertext = "demo-meta-token", TokenType = "bearer", IgBusinessAccountId = "mock-ig-account" },
+            new BrandMetaConnection { Id = Guid.NewGuid(), BrandId = BrandB, TokenCiphertext = "demo-meta-token", TokenType = "bearer", IgBusinessAccountId = "mock-ig-account" });
 
         await seed.SaveChangesAsync();
     }

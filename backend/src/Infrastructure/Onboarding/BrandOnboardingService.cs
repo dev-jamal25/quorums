@@ -84,13 +84,17 @@ internal sealed class BrandOnboardingService : IBrandOnboardingService
         });
 
         // Per-brand Meta credentials as Transit ciphertext (DL-011), brand-scoped (FORCE RLS). Demo
-        // value; decrypted on-use only at publish time inside the publish node.
+        // value; decrypted on-use only at publish time inside the publish node. A dummy IG Business
+        // Account id connects the Instagram channel so the mock pipeline publishes (DL-055; the mock
+        // ignores the value). The live `meta-connect` command overwrites this with the real token +
+        // channel target ids.
         _dbContext.BrandMetaConnections.Add(new BrandMetaConnection
         {
             Id = Guid.NewGuid(),
             BrandId = brandId,
             TokenCiphertext = tokenCiphertext,
             TokenType = "bearer",
+            IgBusinessAccountId = "mock-ig-account",
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

@@ -26,9 +26,10 @@ internal static class PublishWorkflowFactory
         IBrandScope scope,
         PlatformConstraintSet constraints,
         ISecretsProvider secrets,
-        ITrace trace)
+        ITrace trace,
+        string publicBaseUrl)
     {
-        var publishing = new PublishingExecutor(coordinator, db, scope, constraints, secrets, trace);
+        var publishing = new PublishingExecutor(coordinator, db, scope, constraints, secrets, trace, publicBaseUrl);
 
         return new WorkflowBuilder(publishing)
             .WithOutputFrom(publishing)
