@@ -52,18 +52,21 @@ public sealed class RetrievalAblationTests : IClassFixture<RetrievalAblationFixt
         Assert.Equal(ExpectedCaseCount, dataset.Cases.Count);
         var sha = GitInfo.HeadSha();
 
-        // Four config arms; each pairwise comparison isolates one DL-025 stage toggle.
+        // Five config arms. The three rerank arms decompose S2: A = no rerank, B = cross-encoder only
+        // (blend off), C = full rerank (cross-encoder + perf/recency blend) — to attribute the regression.
         var dense = await RunArmAsync("dense", "retrieval[s0=off,sparse=off,rerank=off]",
             new RetrievalOptions { QueryTransformEnabled = false, SparseEnabled = false, RerankEnabled = false }, dataset, sha);
         var hybrid = await RunArmAsync("hybrid", "retrieval[s0=off,sparse=on,rerank=off]",
             new RetrievalOptions { QueryTransformEnabled = false, SparseEnabled = true, RerankEnabled = false }, dataset, sha);
-        var hybridRerank = await RunArmAsync("hybrid+rerank", "retrieval[s0=off,sparse=on,rerank=on]",
+        var crossOnly = await RunArmAsync("cross-encoder-only", "retrieval[s0=off,sparse=on,rerank=on,blend=off]",
+            new RetrievalOptions { QueryTransformEnabled = false, SparseEnabled = true, RerankEnabled = true, BlendEnabled = false }, dataset, sha);
+        var hybridRerank = await RunArmAsync("hybrid+rerank", "retrieval[s0=off,sparse=on,rerank=on,blend=on]",
             new RetrievalOptions { QueryTransformEnabled = false, SparseEnabled = true, RerankEnabled = true }, dataset, sha);
         var hybridS0 = await RunArmAsync("hybrid+s0", "retrieval[s0=on,sparse=on,rerank=off]",
             new RetrievalOptions { QueryTransformEnabled = true, SparseEnabled = true, RerankEnabled = false }, dataset, sha);
 
         // --- Structural assertions: every arm produced n=10 scored cases with in-range metric values. ---
-        foreach (var arm in new[] { dense, hybrid, hybridRerank, hybridS0 })
+        foreach (var arm in new[] { dense, hybrid, crossOnly, hybridRerank, hybridS0 })
         {
             Assert.Equal(ExpectedCaseCount, arm.Cases.Count);
             Assert.All(arm.Cases, c =>
@@ -85,10 +88,15 @@ public sealed class RetrievalAblationTests : IClassFixture<RetrievalAblationFixt
         // --- Paired stage ablation (DL-048): per-query deltas + aggregate + paired win-count, honestly. ---
         _output.WriteLine($"=== Paired stage ablation — n={ExpectedCaseCount}, noise band = {NoiseBand:0.00} (deltas within are noise) ===");
         ReportPaired("S1 sparse (dense-only → +sparse)", dense, hybrid);
-        ReportPaired("S2 rerank (hybrid → +rerank)", hybrid, hybridRerank);
         ReportPaired("S0 multi-query (hybrid → +S0 mock)", hybrid, hybridS0);
 
-        ReportDesignedArms(hybrid, hybridRerank);
+        // S2 decomposition — attribute the rerank regression to the cross-encoder vs. the metadata blend.
+        _output.WriteLine("=== S2 rerank decomposition (A=no rerank, B=cross-encoder only, C=full rerank) ===");
+        ReportPaired("B vs A — cross-encoder only (hybrid → +rerank, blend off)", hybrid, crossOnly);
+        ReportPaired("C vs B — metadata blend (cross-encoder only → +blend)", crossOnly, hybridRerank);
+        ReportPaired("C vs A — full rerank net (hybrid → +rerank+blend)", hybrid, hybridRerank);
+
+        ReportDesignedArms(hybrid, crossOnly, hybridRerank);
     }
 
     // ---- arm execution ----------------------------------------------------------------------------------
@@ -145,9 +153,9 @@ public sealed class RetrievalAblationTests : IClassFixture<RetrievalAblationFixt
                 .Where(r => r.DatasetName == "golden-retrieval" && r.GitSha == sha)
                 .ToListAsync();
 
-            // The four ablation arms, each distinguished by its config descriptor (PromptVersion).
+            // The five ablation arms, each distinguished by its config descriptor (PromptVersion).
             var descriptors = runs.Select(r => r.PromptVersion).ToHashSet(StringComparer.Ordinal);
-            Assert.Equal(4, descriptors.Count);
+            Assert.Equal(5, descriptors.Count);
             Assert.All(runs, r => Assert.Equal(RetrievalAblationFixture.DemoBrand, r.BrandId));
 
             foreach (var run in runs)
@@ -208,20 +216,29 @@ public sealed class RetrievalAblationTests : IClassFixture<RetrievalAblationFixt
         _output.WriteLine("    " + string.Join("  |  ", perCase));
     }
 
-    private void ReportDesignedArms(RetrievalEvalRunResult hybrid, RetrievalEvalRunResult hybridRerank)
+    private void ReportDesignedArms(
+        RetrievalEvalRunResult hybrid, RetrievalEvalRunResult crossOnly, RetrievalEvalRunResult hybridRerank)
     {
-        _output.WriteLine("=== Designed arms (report the truth either way) ===");
+        _output.WriteLine("=== Designed arms across A=hybrid / B=cross-encoder-only / C=full-rerank (truth either way) ===");
 
-        // GR-05 — rerank should lift the rank-aware precision (spans Mission + Yirgacheffe above noise docs).
-        var gr05Off = ByCase(hybrid).GetValueOrDefault("GR-05")?[ContextPrecisionEvaluator.MetricNameConst];
-        var gr05On = ByCase(hybridRerank).GetValueOrDefault("GR-05")?[ContextPrecisionEvaluator.MetricNameConst];
-        _output.WriteLine($"GR-05 (rerank) Context Precision: hybrid={gr05Off:0.000} → +rerank={gr05On:0.000} " +
-            $"(Δ{(gr05On - gr05Off):+0.000;-0.000; 0.000})");
+        // GR-05 (rerank) + GR-08 (performance blend): is the cross-encoder or the blend responsible for the move?
+        ReportCasePrecision("GR-05", "content; full rerank hurt it", hybrid, crossOnly, hybridRerank);
+        ReportCasePrecision("GR-08", "performance intent; +0.300 under full rerank", hybrid, crossOnly, hybridRerank);
 
-        // GR-04 — recency: in the rerank arm (where the recency blend is active), does Intel-2026 outrank
-        // the excluded Intel-2024?
-        ReportRecency("hybrid (rerank off)", hybrid);
-        ReportRecency("hybrid+rerank (recency blend on)", hybridRerank);
+        // GR-04 — recency: does Intel-2026 outrank the excluded Intel-2024? The recency-δ lives only in the
+        // blend (C); cross-encoder-only (B) has no recency term.
+        ReportRecency("A hybrid (no rerank)", hybrid);
+        ReportRecency("B cross-encoder-only (no recency-δ)", crossOnly);
+        ReportRecency("C full rerank (recency blend on)", hybridRerank);
+    }
+
+    private void ReportCasePrecision(
+        string caseId, string note, RetrievalEvalRunResult a, RetrievalEvalRunResult b, RetrievalEvalRunResult c)
+    {
+        var pa = ByCase(a)[caseId][ContextPrecisionEvaluator.MetricNameConst];
+        var pb = ByCase(b)[caseId][ContextPrecisionEvaluator.MetricNameConst];
+        var pc = ByCase(c)[caseId][ContextPrecisionEvaluator.MetricNameConst];
+        _output.WriteLine($"{caseId} ({note}) Context Precision: A={pa:0.000} → B(cross-only)={pb:0.000} → C(+blend)={pc:0.000}");
     }
 
     private void ReportRecency(string label, RetrievalEvalRunResult arm)

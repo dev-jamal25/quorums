@@ -26,6 +26,15 @@ public sealed class RetrievalOptions
     /// <summary>S2 cross-encoder rerank (slice 3).</summary>
     public bool RerankEnabled { get; init; }
 
+    /// <summary>
+    /// S2 metadata blend on top of the cross-encoder. On (default) → the per-docType perf/recency
+    /// <c>MetadataBlend</c> combines with the relevance score. Off → order by the bge cross-encoder
+    /// relevance alone, skipping the blend — a DL-025 diagnostic knob to isolate the blend's contribution
+    /// from the cross-encoder's. Only consulted when <see cref="RerankEnabled"/> is true; default preserves
+    /// today's behaviour.
+    /// </summary>
+    public bool BlendEnabled { get; init; } = true;
+
     /// <summary>S2 final cut (k).</summary>
     public int FinalK { get; init; } = 5;
 
