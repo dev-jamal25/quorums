@@ -134,6 +134,20 @@ public sealed class RuleBasedEvaluatorTests
     }
 
     [Fact]
+    public async Task Grounding_honesty_reds_when_the_strategist_candidate_union_includes_an_uninjected_id()
+    {
+        // The Strategist's raw claimed is the UNION across its N=3 candidates (one dishonest candidate
+        // lands an un-injected id in the union), audited against the Strategist's OWN injected set.
+        var evaluator = new GroundingHonestyEvaluator();
+        var adversarial = EvalTestData.ValidOutput() with
+        {
+            ClaimedChunkIdsByNode = new Dictionary<string, IReadOnlyList<string>> { [SystemOutput.Nodes.ContentStrategist] = ["A", "C"] },
+            InjectedChunkIdsByNode = new Dictionary<string, IReadOnlyList<string>> { [SystemOutput.Nodes.ContentStrategist] = ["A", "B"] },
+        };
+        Assert.False(await PassedAsync(evaluator, adversarial, GroundingHonestyEvaluator.MetricNameConst));
+    }
+
+    [Fact]
     public async Task Bounded_retry_fails_when_a_node_exceeds_the_retry_bound()
     {
         // A node reporting more than the bounded 2 retries is a trajectory violation regardless of errors.
