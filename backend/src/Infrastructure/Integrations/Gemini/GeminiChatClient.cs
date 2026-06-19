@@ -65,6 +65,19 @@ public sealed class GeminiChatClient : IChatClient
             .Select(part => part.Text)
             .Where(t => !string.IsNullOrEmpty(t)));
 
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            // Safety filter / empty candidate: surface a CLEAR typed diagnostic, never a silent empty
+            // response a caller would mis-read. A retry would not help — Gemini's block is deterministic
+            // for a given prompt — so the judge maps this to a clear red ("safety filter"), not a
+            // misleading "unparseable verdict". The judge's try/catch turns this into a clean failed metric.
+            var finish = payload?.Candidates is { Count: > 0 } candidates ? candidates[0].FinishReason : null;
+            var block = payload?.PromptFeedback?.BlockReason;
+            throw new GeminiJudgeBlockedException(
+                $"Gemini judge returned no text (finishReason={finish ?? "none"}, blockReason={block ?? "none"}) — " +
+                "a safety filter or empty candidate, not a verdict.");
+        }
+
         return new ChatResponse(new ChatMessage(ChatRole.Assistant, text))
         {
             ModelId = _model,
@@ -149,8 +162,34 @@ public sealed class GeminiChatClient : IChatClient
         [property: JsonPropertyName("maxOutputTokens")] int? MaxOutputTokens);
 
     private sealed record GenResponse(
-        [property: JsonPropertyName("candidates")] IReadOnlyList<GenCandidate>? Candidates);
+        [property: JsonPropertyName("candidates")] IReadOnlyList<GenCandidate>? Candidates,
+        [property: JsonPropertyName("promptFeedback")] GenPromptFeedback? PromptFeedback);
 
     private sealed record GenCandidate(
-        [property: JsonPropertyName("content")] GenContent? Content);
+        [property: JsonPropertyName("content")] GenContent? Content,
+        [property: JsonPropertyName("finishReason")] string? FinishReason);
+
+    private sealed record GenPromptFeedback(
+        [property: JsonPropertyName("blockReason")] string? BlockReason);
+}
+
+/// <summary>
+/// A Gemini judge call returned no usable text — a safety filter (<c>promptFeedback.blockReason</c> /
+/// candidate <c>finishReason=SAFETY</c>) or an empty candidate. Surfaced as a clear typed diagnostic so
+/// the judge maps it to a clean failed verdict rather than silently treating an empty response as an
+/// unparseable one; the live re-calibration sees a clear reason, not a crash.
+/// </summary>
+public sealed class GeminiJudgeBlockedException : Exception
+{
+    public GeminiJudgeBlockedException(string message) : base(message)
+    {
+    }
+
+    public GeminiJudgeBlockedException()
+    {
+    }
+
+    public GeminiJudgeBlockedException(string message, Exception innerException) : base(message, innerException)
+    {
+    }
 }
