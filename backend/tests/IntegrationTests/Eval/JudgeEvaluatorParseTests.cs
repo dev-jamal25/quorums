@@ -13,6 +13,7 @@ namespace Backend.IntegrationTests.Eval;
 /// and a missing client / unparseable verdict reds the metric (a judge that cannot answer is not a pass).
 /// </summary>
 [Trait("Category", "Eval")]
+[Trait("Category", "EvalGate")]
 public sealed class JudgeEvaluatorParseTests
 {
     private const int Threshold = 4;

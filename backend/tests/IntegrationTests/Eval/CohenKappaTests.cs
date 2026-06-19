@@ -8,6 +8,7 @@ namespace Backend.IntegrationTests.Eval;
 /// synthetic, no LLM, no DB — known label arrays → known κ, including the all-same degenerate case.
 /// </summary>
 [Trait("Category", "Eval")]
+[Trait("Category", "EvalGate")]
 public sealed class CohenKappaTests
 {
     [Fact]
