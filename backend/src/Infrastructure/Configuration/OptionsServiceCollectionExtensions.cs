@@ -35,6 +35,8 @@ public static class OptionsServiceCollectionExtensions
         services.AddValidatedOptions<GenerationOptions>(configuration, GenerationOptions.SectionName);
         services.AddValidatedOptions<CostPricesOptions>(configuration, CostPricesOptions.SectionName);
         services.AddValidatedOptions<PlatformConstraintsOptions>(configuration, PlatformConstraintsOptions.SectionName);
+        // Phase-9 LLM-judge tier (DL-057): the config-bound pass threshold for the κ gate.
+        services.AddValidatedOptions<JudgeOptions>(configuration, JudgeOptions.SectionName);
         // Langfuse keys are optional (empty = no-op local tracing); no [Required], so
         // validation is a no-op but the binding stays consistent with every other section.
         services.AddValidatedOptions<LangfuseOptions>(configuration, LangfuseOptions.SectionName);

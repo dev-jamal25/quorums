@@ -34,4 +34,22 @@ public static class EvalReportingFactory
             enableResponseCaching: true,
             executionName: executionName,
             tags: tags);
+
+    /// <summary>
+    /// Reporting for the LLM-judge tier (DL-057): carries the judge <paramref name="chatConfiguration"/> and
+    /// enables response caching so the one-time calibration spend is replayed at zero cost (the CI path).
+    /// The cache TTL is set effectively unbounded so a committed cache never silently expires CI.
+    /// </summary>
+    public static ReportingConfiguration CreateJudgeReporting(
+        IEnumerable<IEvaluator> evaluators,
+        ChatConfiguration chatConfiguration,
+        string storageRootPath,
+        string executionName = "judge") =>
+        DiskBasedReportingConfiguration.Create(
+            storageRootPath: storageRootPath,
+            evaluators: evaluators,
+            chatConfiguration: chatConfiguration,
+            enableResponseCaching: true,
+            timeToLiveForCacheEntries: TimeSpan.FromDays(36_500),
+            executionName: executionName);
 }
