@@ -1,0 +1,60 @@
+# Nightly eval report — TRACKED, NOT a required check (DL-046/051).
+# Informational only: runs the no-spend tracked evals, generates the `dotnet aieval` HTML report,
+# and uploads it as an artifact. NO LLM keys, NO live judge calibration, NO live spend.
+#
+# What runs here (all no-spend, Postgres via Testcontainers):
+#   §1 invariants + §3 cost/latency + §6 judge scores FROM THE COMMITTED VERDICTS (replay, not live).
+# What is EXCLUDED:
+#   §2 retrieval rank/ablation — needs the self-hosted TEI embed + bge-reranker, which are not
+#   feasible to stand up reliably on a standard CI runner (multi-GB model download every run, no
+#   persistent weight cache, CPU cross-encoder). Those tests self-skip here (explicit-skip seam) and
+#   stay an on-demand LOCAL run. The live judge calibration is excluded by design (no key in CI).
+name: eval-nightly
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC daily
+  workflow_dispatch: {} # allow manual runs
+
+jobs:
+  eval-report:
+    name: eval-report
+    runs-on: ubuntu-latest
+    env:
+      Meta__Mode: mock
+      Vault__Enabled: "false"
+      # No LLM keys — the nightly is no-spend. The §2 TEI tests + the live judge test self-skip.
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+      Gemini__ApiKey: ""
+      EVAL_REPORT_STORE: ${{ github.workspace }}/eval/.report-store
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore
+      - name: Restore tools (dotnet aieval)
+        working-directory: ${{ github.workspace }}
+        run: dotnet tool restore
+      - name: Build
+        run: dotnet build --no-restore -c Release
+      - name: Run tracked evals (no-spend; §2 TEI + live judge self-skip)
+        # Populates the disk result store (EVAL_REPORT_STORE) and persists eval_run/eval_result
+        # RLS-scoped via the Testcontainers Postgres. Cost/latency + §6 replay are the tracked metrics.
+        run: dotnet test --no-build -c Release --filter "Category=Eval"
+      - name: Generate dotnet aieval report
+        working-directory: ${{ github.workspace }}
+        run: dotnet aieval report -p "${{ github.workspace }}/eval/.report-store" -o "${{ github.workspace }}/eval/eval-report.html" -f html
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: ${{ github.workspace }}/eval/eval-report.html
+          if-no-files-found: error

@@ -134,6 +134,55 @@ public sealed class RlsLeakageTests : IClassFixture<RlsLeakageFixture>
     }
 
     [Fact]
+    public async Task Eval_store_tables_are_brand_scoped_brand_A_sees_only_its_own_rows()
+    {
+        // The Phase-9 eval run store (DL-051/052) rides the same RLS policy: Brand A's scope sees only
+        // its own eval_runs + eval_results — no WHERE on brand_id, the policy does the filtering.
+        var (db, scope) = _fixture.CreateBrandScopedContext(_fixture.BrandA);
+        await using (db)
+        {
+            await using var handle = await scope.BeginAsync();
+
+            var runs = await db.EvalRuns.AsNoTracking().ToListAsync();
+            Assert.NotEmpty(runs);
+            Assert.All(runs, run => Assert.Equal(_fixture.BrandA, run.BrandId));
+
+            var results = await db.EvalResults.AsNoTracking().ToListAsync();
+            Assert.NotEmpty(results);
+            Assert.All(results, result => Assert.Equal(_fixture.BrandA, result.BrandId));
+        }
+    }
+
+    [Fact]
+    public async Task Eval_run_write_cannot_escape_the_brand_scope()
+    {
+        // A forced eval-run write carrying Brand B's id under Brand A's scope is rejected by WITH CHECK.
+        var (db, scope) = _fixture.CreateBrandScopedContext(_fixture.BrandA);
+        await using (db)
+        {
+            await using var handle = await scope.BeginAsync();
+
+            db.EvalRuns.Add(new EvalRun
+            {
+                Id = Guid.NewGuid(),
+                BrandId = _fixture.BrandB,          // foreign brand — must not be writable from A's scope
+                CreatedAt = DateTimeOffset.UtcNow,
+                GitSha = "escape",
+                PromptVersion = "unversioned",
+                ModelName = "test",
+                ModelVersion = "1",
+                Temperature = 0,
+                DatasetName = "tool-call-fixture",
+                DatasetVersion = "1.0.0",
+                DatasetSize = 0,
+                Aggregates = new Dictionary<string, MetricAggregate>(),
+            });
+
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        }
+    }
+
+    [Fact]
     public async Task ApprovalAction_write_cannot_escape_the_brand_scope()
     {
         // The gate's ApprovalAction writes (Slice 3) ride the same WITH CHECK policy: under Brand A's

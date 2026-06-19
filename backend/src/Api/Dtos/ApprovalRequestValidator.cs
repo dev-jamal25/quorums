@@ -1,3 +1,4 @@
+using Backend.Core.Generation;
 using Backend.Core.Generation.PlatformConstraints;
 using FluentValidation;
 
@@ -26,6 +27,15 @@ public sealed class ApprovalRequestValidator : AbstractValidator<ApprovalRequest
             RuleFor(r => r.Edits!.Hashtags)
                 .Must(hashtags => hashtags is null || PlatformConstraintValidator.ValidateHashtags(hashtags, ig).IsValid)
                 .WithMessage($"Hashtags exceed the limit of {ig.MaxHashtags}.");
+
+            // Hashtags publish INSIDE the caption (DL-055), so the COMBINED length must fit the cap — a
+            // near-limit caption plus hashtags fails fast here, not at Meta. The publish-time re-check is
+            // the authoritative backstop (it also sees draft fields a partial edit omits).
+            RuleFor(r => r.Edits!)
+                .Must(edits => PlatformConstraintValidator
+                    .ValidateCaptionLength(CaptionComposer.Compose(edits.Caption ?? string.Empty, edits.Hashtags), ig)
+                    .IsValid)
+                .WithMessage($"Caption combined with hashtags exceeds the {ig.MaxCaptionLength}-character limit.");
         });
 
         RuleFor(r => r.ScheduledFor)

@@ -38,6 +38,20 @@ public sealed class ApprovalRequestValidatorTests
     }
 
     [Fact]
+    public void Approve_with_caption_plus_hashtags_over_combined_limit_is_invalid()
+    {
+        // Caption alone fits (2195 <= 2200) and the hashtag COUNT fits (1 <= 30), but the caption
+        // composed with "#sale" passes 2200 — the combined check must fail fast (DL-055).
+        var request = new ApprovalRequest(
+            GateDecision.Approve,
+            new ApprovalEdits(new string('x', 2195), ["#sale"]),
+            ScheduledFor: null,
+            Reason: null);
+
+        Assert.False(_validator.Validate(request).IsValid);
+    }
+
+    [Fact]
     public void Approve_with_in_limit_edit_is_valid()
     {
         var request = new ApprovalRequest(

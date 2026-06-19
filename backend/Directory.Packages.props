@@ -49,6 +49,18 @@
          downgrade (NU1109). Anthropic.SDK exposes an IChatClient via AnthropicClient.Messages. -->
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.6.0" />
     <PackageVersion Include="Anthropic.SDK" Version="5.4.3" />
+    <!-- Phase-9 evaluation suite (DL-053): built ON the first-party Microsoft.Extensions.AI.Evaluation
+         library (Microsoft's IEvaluator + response cache + reporting), not a hand-rolled harness. Pinned
+         to 10.6.0 to align with the Microsoft.Extensions.AI 10.6.0 pin above — central transitive pinning
+         would otherwise force an AI bump. NOT .Safety (requires Azure AI Foundry). The `dotnet aieval`
+         CLI (.Console) is a local tool in .config/dotnet-tools.json, not a package reference. -->
+    <PackageVersion Include="Microsoft.Extensions.AI.Evaluation" Version="10.6.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Evaluation.Quality" Version="10.6.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Evaluation.Reporting" Version="10.6.0" />
+    <!-- .NLP has no stable 10.6.0 (ships on a later cadence; nearest is a 10.7.0 preview). It is only
+         needed for the reference-based text-similarity metrics (slice 4), so it is deferred to that
+         slice rather than pinning a preview here (skill: pin stable). -->
+    <!-- <PackageVersion Include="Microsoft.Extensions.AI.Evaluation.NLP" Version="10.6.0" /> -->
     <PackageVersion Include="VaultSharp" Version="1.17.5.1" />
     <PackageVersion Include="Minio" Version="6.0.3" />
     <PackageVersion Include="Serilog.AspNetCore" Version="8.0.3" />

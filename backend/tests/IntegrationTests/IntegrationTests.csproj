@@ -25,6 +25,9 @@
     <!-- Direct EF Core + Npgsql use in the RLS leakage test (UseNpgsql, MigrateAsync,
          NpgsqlConnectionStringBuilder for the least-privilege role connection). -->
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <!-- Phase-9 Category=Eval tests assert on EvaluationResult/metrics and drive a ScenarioRun. -->
+    <PackageReference Include="Microsoft.Extensions.AI.Evaluation" />
+    <PackageReference Include="Microsoft.Extensions.AI.Evaluation.Reporting" />
   </ItemGroup>
 
   <ItemGroup>

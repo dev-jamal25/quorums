@@ -43,6 +43,42 @@ jobs:
       - name: Vulnerability scan
         run: dotnet list package --vulnerable --include-transitive
 
+  # STABLE job name — select "eval-gate" as a required status check alongside "build-test".
+  # The merge-blocking eval tier (DL-046/051): the §1 deterministic invariants + the §6
+  # committed-verdicts judge replay (κ recompute + the 13-16 adversarial asserts). Strictly
+  # no-spend and key-free: no Gemini, no Anthropic, no TEI/bge self-hosted models — only the
+  # deterministic mock path. §2 (retrieval rank/ablation, needs TEI/bge) and §3 (cost/latency,
+  # tracked) and the live judge calibration are deliberately EXCLUDED — they are tracked, not
+  # blocking, and run in the nightly / on-demand instead.
+  eval-gate:
+    name: eval-gate
+    runs-on: ubuntu-latest
+    env:
+      Meta__Mode: mock
+      Vault__Enabled: "false"
+      # Blank every LLM key so this tier cannot reach a live provider even if one is set.
+      ANTHROPIC_API_KEY: ""
+      GEMINI_API_KEY: ""
+      Gemini__ApiKey: ""
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore
+      - name: Format check
+        run: dotnet format --verify-no-changes
+      - name: Build (Roslyn analyzers + warnings-as-errors)
+        run: dotnet build --no-restore -c Release
+      - name: EvalGate (§1 invariants + §6 judge replay — deterministic, no-spend, no TEI/Gemini)
+        run: dotnet test --no-build -c Release --filter "Category=EvalGate"
+
   secret-scan:
     name: secret-scan
     runs-on: ubuntu-latest

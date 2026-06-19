@@ -1,8 +1,10 @@
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
 using Backend.Core.Secrets;
+using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Persistence;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Infrastructure.Orchestration.Maf;
 
@@ -22,19 +24,22 @@ public sealed class MafOrchestrator : IOrchestrator
     private readonly AppDbContext _db;
     private readonly IBrandScope _scope;
     private readonly ISecretsProvider _secrets;
+    private readonly string _publicBaseUrl;
 
     public MafOrchestrator(
         GenerationAgentDeps gen,
         PublishCoordinator coordinator,
         AppDbContext db,
         IBrandScope scope,
-        ISecretsProvider secrets)
+        ISecretsProvider secrets,
+        IOptions<StorageOptions> storageOptions)
     {
         _gen = gen;
         _coordinator = coordinator;
         _db = db;
         _scope = scope;
         _secrets = secrets;
+        _publicBaseUrl = storageOptions.Value.PublicBaseUrl;
     }
 
     public Task<RunState> RunGenerationAsync(RunState state, CancellationToken cancellationToken = default)
@@ -54,7 +59,7 @@ public sealed class MafOrchestrator : IOrchestrator
 
     public Task<RunState> RunPublishAsync(RunState state, CancellationToken cancellationToken = default)
         => MafWorkflowRunner.RunToOutputAsync(
-            PublishWorkflowFactory.Build(_coordinator, _db, _scope, _gen.Constraints, _secrets, _gen.Trace),
+            PublishWorkflowFactory.Build(_coordinator, _db, _scope, _gen.Constraints, _secrets, _gen.Trace, _publicBaseUrl),
             state,
             PublishWorkflowFactory.TerminalId,
             cancellationToken);

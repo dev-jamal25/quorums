@@ -1,3 +1,4 @@
+using Backend.Core.Evaluation;
 using Backend.Core.Generation.Cost;
 using Backend.Core.Generation.PlatformConstraints;
 using Backend.Core.Integrations;
@@ -9,6 +10,7 @@ using Backend.Core.Secrets;
 using Backend.Core.Storage;
 using Backend.Infrastructure.Configuration.Secrets;
 using Backend.Infrastructure.Generation;
+using Backend.Infrastructure.Integrations.Gemini;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Orchestration.Maf;
 using Backend.Infrastructure.Persistence;
@@ -53,6 +55,46 @@ internal static class TestGeneration
     }
 
     /// <summary>
+    /// Eval variant: deterministic deps for a mock-mode generation. Per-node grounding provenance now
+    /// rides the durable trace (DL-054) — no injected-id recording double — so a test reads injected +
+    /// claimed ids from the projected trace. The <see cref="CountingChatClient"/> is retained for the
+    /// per-node retry counts (not on the trace). <paramref name="retrieval"/> + <paramref name="groundingClaim"/>
+    /// let the grounding-honesty proof inject a known set and make the model claim chosen ids.
+    /// </summary>
+    public static (GenerationAgentDeps Deps, CountingChatClient Chat) EvalDeps(
+        IEnumerable<string>? failTools = null,
+        IEnumerable<string>? flakyTools = null,
+        decimal globalCeilingUsd = 1.00m,
+        IRetrievalService? retrieval = null,
+        IEnumerable<string>? groundingClaim = null)
+    {
+        var chat = new CountingChatClient(new DeterministicGenerationChatClient(failTools, flakyTools, groundingClaim));
+        var deps = new GenerationAgentDeps(
+            Generator: new ForcedToolGenerator(chat),
+            Retrieval: retrieval ?? new FakeRetrievalService(),
+            Media: new DeterministicMediaGenerationTool(),
+            Storage: new InMemoryStorageService(),
+            Constraints: Constraints(),
+            Prices: Prices(),
+            GlobalCeilingUsd: globalCeilingUsd,
+            SonnetModel: SonnetModel,
+            HaikuModel: HaikuModel,
+            Trace: new LocalTraceRecorder(),
+            LoggerFactory: NullLoggerFactory.Instance);
+        return (deps, chat);
+    }
+
+    /// <summary>Per-node retry counts from the call-counting chat client (retries = attempts - 1).</summary>
+    public static IReadOnlyDictionary<string, int> OffStateRetries(CountingChatClient chat) =>
+        new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            [SystemOutput.Nodes.ContentStrategist] = chat.RetriesForTool("record_strategy_candidates"),
+            [SystemOutput.Nodes.SupervisorSelection] = chat.RetriesForTool("record_selection"),
+            [SystemOutput.Nodes.CreativeDirector] = chat.RetriesForTool("record_creative_direction"),
+            [SystemOutput.Nodes.Copywriting] = chat.RetriesForTool("record_caption"),
+        };
+
+    /// <summary>
     /// Builds the real <see cref="MafOrchestrator"/>. Generation-only tests omit the publish deps
     /// (RunGenerationAsync never touches them); publish tests pass a real coordinator + brand-scoped
     /// db/scope so RunPublishAsync runs end-to-end.
@@ -62,8 +104,16 @@ internal static class TestGeneration
         PublishCoordinator? coordinator = null,
         AppDbContext? db = null,
         IBrandScope? scope = null,
-        ISecretsProvider? secrets = null)
-        => new(deps, coordinator!, db!, scope!, secrets ?? new PassthroughSecretsProvider());
+        ISecretsProvider? secrets = null,
+        string publicBaseUrl = "")
+        => new(
+            deps,
+            coordinator!,
+            db!,
+            scope!,
+            secrets ?? new PassthroughSecretsProvider(),
+            Microsoft.Extensions.Options.Options.Create(
+                new Backend.Infrastructure.Configuration.Options.StorageOptions { PublicBaseUrl = publicBaseUrl }));
 
     public static CostPrices Prices() => new(
         SonnetInputPerMTok: 3m,

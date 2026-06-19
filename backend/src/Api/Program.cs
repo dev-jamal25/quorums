@@ -51,7 +51,7 @@ builder.Services.AddKnowledge(builder.Configuration);
 // worker's schema-readiness healthcheck, so the schema exists before the api touches the store.
 builder.Services.AddHangfireJobStore(builder.Configuration, installSchema: false);
 builder.Services.AddStorage();
-builder.Services.AddMetaIntegration();
+builder.Services.AddMetaIntegration(builder.Configuration);
 builder.Services.AddTracing(builder.Configuration);
 builder.Services.AddGeneration(builder.Configuration);
 builder.Services.AddOrchestration();
@@ -88,6 +88,46 @@ if (args.Contains("seed"))
     Console.WriteLine($"BRAND_ID={seed.BrandId}");
     Console.WriteLine("Paste BRAND_ID into the dashboard's Brand field.");
     Console.WriteLine();
+    return;
+}
+
+// CLI: `dotnet Backend.Api.dll meta-connect --brand <guid> [--page-id <id>] [--ig-id <id>] [--token-type <t>]`
+// — seed a brand's live Meta connection (DL-055): Transit-encrypts the token and upserts the
+// BrandMetaConnection with the token ciphertext + channel target ids, then exits (analogous to `seed`).
+// The TOKEN is supplied via the META_PAGE_TOKEN env var, NEVER a CLI arg — it is encrypted before it
+// touches the DB and is never logged or echoed. Run once via the live runbook.
+if (args.Contains("meta-connect"))
+{
+    string? Arg(string name) => args.SkipWhile(a => a != name).Skip(1).FirstOrDefault();
+
+    if (!Guid.TryParse(Arg("--brand"), out var connectBrandId))
+    {
+        Console.Error.WriteLine("meta-connect: --brand <guid> is required.");
+        return;
+    }
+
+    var pageId = Arg("--page-id");
+    var igId = Arg("--ig-id");
+    if (string.IsNullOrWhiteSpace(pageId) && string.IsNullOrWhiteSpace(igId))
+    {
+        Console.Error.WriteLine("meta-connect: at least one of --page-id / --ig-id is required.");
+        return;
+    }
+
+    var token = Environment.GetEnvironmentVariable("META_PAGE_TOKEN");
+    if (string.IsNullOrWhiteSpace(token))
+    {
+        Console.Error.WriteLine("meta-connect: supply the token via the META_PAGE_TOKEN env var (never a CLI arg).");
+        return;
+    }
+
+    await using var connectScope = app.Services.CreateAsyncScope();
+    var connector = connectScope.ServiceProvider.GetRequiredService<BrandMetaConnector>();
+    await connector.ConnectAsync(connectBrandId, token, pageId, igId, Arg("--token-type") ?? "page");
+
+    var fb = string.IsNullOrWhiteSpace(pageId) ? "-" : "set";
+    var ig = string.IsNullOrWhiteSpace(igId) ? "-" : "set";
+    Console.WriteLine($"Meta connection upserted  brand={connectBrandId}  facebook_page={fb}  ig_account={ig}");
     return;
 }
 

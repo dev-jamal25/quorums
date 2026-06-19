@@ -1,0 +1,62 @@
+{
+  "_meta": {
+    "name": "tool-call-fixture",
+    "version": "1.0.0",
+    "created_at": "2026-06-19",
+    "size": 3,
+    "criteria": "Tiny fixture exercising the load -> evaluate -> persist harness path for the rule-based tool-call evaluators. NOT a golden set (that is slice 3); these cases describe the deterministic tool-call invariants from evaluators.md §1."
+  },
+  "cases": [
+    {
+      "id": "TC-001-happy",
+      "input": {
+        "surface": "instagram_feed",
+        "brief": "A complete, on-brand generation run that reaches a caption + media draft."
+      },
+      "expected": {
+        "schema_valid": true,
+        "selection_in_range": true,
+        "platform_constraints_satisfied": true,
+        "pillar_in_playbook": true,
+        "grounding_honest": true,
+        "budget_degraded": false
+      },
+      "tags": ["happy-path", "tool-call"],
+      "notes": "All §1 rule-based evaluators should pass on a clean mock-mode run.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "TC-002-schema-violation",
+      "input": {
+        "surface": "instagram_feed",
+        "brief": "A run where the Content Strategist tool output is malformed on every attempt."
+      },
+      "expected": {
+        "schema_valid": false,
+        "bounded_retry": "2 retries then ToolError(generation.schema_violation)"
+      },
+      "tags": ["adversarial", "schema", "bounded-retry"],
+      "notes": "Forces the 2-retry -> ToolError trajectory; the schema-validity and bounded-retry evaluators must red.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    },
+    {
+      "id": "TC-003-budget-degraded",
+      "input": {
+        "surface": "instagram_feed",
+        "brief": "A run whose media budget is below the per-image price at the pre-Media gate."
+      },
+      "expected": {
+        "budget_degraded": true,
+        "gemini_call_count": 0,
+        "caption_only_draft": true,
+        "fatal_error": false
+      },
+      "tags": ["adversarial", "budget", "degradation"],
+      "notes": "Media-budget breach -> caption-only draft, BudgetDegraded, zero Gemini calls, no fatal error.",
+      "added_by": "jamal",
+      "added_at": "2026-06-19"
+    }
+  ]
+}

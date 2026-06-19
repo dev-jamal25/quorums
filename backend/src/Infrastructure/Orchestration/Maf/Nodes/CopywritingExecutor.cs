@@ -106,6 +106,14 @@ public sealed class CopywritingExecutor : Executor<RunState, RunState>
         // Hard-truncate fallback — never emit an over-limit caption.
         caption = HardTruncate(caption, surface);
 
+        // DL-054: durably record the raw per-node provenance (claimed as received + injected) BEFORE reconcile.
+        var claimedChunkIds = (caption.Grounding.ChunkIdsUsed ?? [])
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var provenanceTrace = await GroundingProvenance.RecordAsync(
+            _deps.Trace, state.Trace, state.RunId, state.BrandId, "copywriting",
+            claimedChunkIds, provenanceIds, cancellationToken).ConfigureAwait(false);
+
         // hashtagCount over → repair (drop extras + trace note).
         var (hashtags, repaired) = PlatformConstraintValidator.RepairHashtags(caption.Hashtags, surface);
         var finalCaption = caption with
@@ -119,7 +127,7 @@ public sealed class CopywritingExecutor : Executor<RunState, RunState>
             : null;
         var cost = NodeCostEstimator.ForCall("copywriting", "copywriting", _deps.Prices);
         var trace = await _deps.Trace.RecordAsync(
-            state.Trace, state.RunId, state.BrandId, "copywriting", null, "ok",
+            provenanceTrace, state.RunId, state.BrandId, "copywriting", null, "ok",
             startedAt, DateTimeOffset.UtcNow, null, detail, cancellationToken)
             .ConfigureAwait(false);
 

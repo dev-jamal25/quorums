@@ -21,6 +21,10 @@ public sealed class GeminiOptions
     /// <summary>The image-generation model id (config-bound, never a code literal — DL-029/P3).</summary>
     public string Model { get; init; } = "gemini-2.5-flash-image";
 
+    /// <summary>The TEXT model id for the Phase-9 LLM-judge tier (DL-057), config-bound. Distinct from the
+    /// image <see cref="Model"/>: the judges need a text completion, not an image.</summary>
+    public string JudgeModel { get; init; } = "gemini-2.5-flash";
+
     /// <summary>The Developer-API version path segment (<c>generateContent</c> lives under v1beta).</summary>
     public string ApiVersion { get; init; } = "v1beta";
 

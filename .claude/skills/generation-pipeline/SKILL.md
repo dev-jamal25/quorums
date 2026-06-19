@@ -134,6 +134,29 @@ what makes "captions visibly use retrieved brand facts" checkable and the
 Phase-9 grounding eval scoreable. **Empty retrieval → `grounded = false`,
 proceed ungrounded** (DL-022) — never a failure.
 
+## Grounding provenance capture (DL-054)
+
+Each grounding node (Content Strategist, Creative Director, Copywriting) computes its injected chunk
+ids and reconciles the model's claimed grounding inline (`grounded = claimed ∩ injected`, DL-034).
+**Before reconciling, durably record — per node — BOTH the raw model-claimed chunk ids and the
+injected chunk ids**, into the node's span `Detail` via the append-only durable trace seam
+(`Trace.RecordAsync`, e.g. `{ "claimedChunkIds": [...], "injectedChunkIds": [...] }`).
+
+- **Unconditional:** part of the always-on durable run record (surfaced at `GET /runs/{id}/trace`) —
+  **not** gated on Langfuse export. If the trace recorder has a no-op/local fallback, provenance is
+  still written on it.
+- **Raw, not reconciled:** record the model's claimed ids *as received, before* the `claimed ∩
+  injected` reconcile. The reconciled `chunkIdsUsed` is ⊆ injected by construction and cannot support
+  an honest audit.
+- **No frozen-contract change:** `RunState` and the agent-output records (DL-020) are untouched —
+  provenance rides in the trace `Detail` only.
+- **Single eval source:** the eval `SystemOutputProjector` reads `ClaimedChunkIdsByNode` +
+  `InjectedChunkIdsByNode` from this provenance on real and mock runs alike; no separate injected-id
+  test double.
+
+This is what makes grounding honesty independently auditable end-to-end (see the `evaluation-suite`
+skill).
+
 ## 5. Cost model (DL-029) — summary
 
 Full rules + the estimate table in `references/cost-model.md`. The shape:

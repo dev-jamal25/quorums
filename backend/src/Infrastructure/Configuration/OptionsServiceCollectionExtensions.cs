@@ -22,6 +22,8 @@ public static class OptionsServiceCollectionExtensions
         services.AddValidatedOptions<AnthropicOptions>(configuration, AnthropicOptions.SectionName);
         services.AddValidatedOptions<GeminiOptions>(configuration, GeminiOptions.SectionName);
         services.AddValidatedOptions<MinioOptions>(configuration, MinioOptions.SectionName);
+        // Non-secret public asset origin for the live Meta MediaUrl (DL-055); optional (empty in mock/CI).
+        services.AddValidatedOptions<StorageOptions>(configuration, StorageOptions.SectionName);
         services.AddValidatedOptions<RedisOptions>(configuration, RedisOptions.SectionName);
         services.AddValidatedOptions<EmbeddingsOptions>(configuration, EmbeddingsOptions.SectionName);
         services.AddValidatedOptions<RetrievalOptions>(configuration, RetrievalOptions.SectionName);
@@ -35,6 +37,8 @@ public static class OptionsServiceCollectionExtensions
         services.AddValidatedOptions<GenerationOptions>(configuration, GenerationOptions.SectionName);
         services.AddValidatedOptions<CostPricesOptions>(configuration, CostPricesOptions.SectionName);
         services.AddValidatedOptions<PlatformConstraintsOptions>(configuration, PlatformConstraintsOptions.SectionName);
+        // Phase-9 LLM-judge tier (DL-057): the config-bound pass threshold for the κ gate.
+        services.AddValidatedOptions<JudgeOptions>(configuration, JudgeOptions.SectionName);
         // Langfuse keys are optional (empty = no-op local tracing); no [Required], so
         // validation is a no-op but the binding stays consistent with every other section.
         services.AddValidatedOptions<LangfuseOptions>(configuration, LangfuseOptions.SectionName);

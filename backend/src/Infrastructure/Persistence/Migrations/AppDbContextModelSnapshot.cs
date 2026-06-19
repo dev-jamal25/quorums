@@ -192,6 +192,14 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<string>("FacebookPageId")
+                        .HasColumnType("text")
+                        .HasColumnName("facebook_page_id");
+
+                    b.Property<string>("IgBusinessAccountId")
+                        .HasColumnType("text")
+                        .HasColumnName("ig_business_account_id");
+
                     b.Property<DateTimeOffset?>("RotatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("rotated_at");
@@ -366,6 +374,128 @@ namespace Backend.Infrastructure.Persistence.Migrations
                     b.ToTable("eval_records");
                 });
 
+            modelBuilder.Entity("Backend.Core.Domain.EvalResultRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("BrandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("brand_id");
+
+                    b.Property<string>("CaseId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("case_id");
+
+                    b.Property<decimal?>("CostUsd")
+                        .HasColumnType("numeric")
+                        .HasColumnName("cost_usd");
+
+                    b.Property<string>("EvaluatorName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("evaluator_name");
+
+                    b.Property<long?>("LatencyMs")
+                        .HasColumnType("bigint")
+                        .HasColumnName("latency_ms");
+
+                    b.Property<string>("Metadata")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata");
+
+                    b.Property<string>("Reasoning")
+                        .HasColumnType("text")
+                        .HasColumnName("reasoning");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("run_id");
+
+                    b.Property<double>("Score")
+                        .HasColumnType("double precision")
+                        .HasColumnName("score");
+
+                    b.HasKey("Id")
+                        .HasName("pk_eval_results");
+
+                    b.HasIndex("BrandId")
+                        .HasDatabaseName("ix_eval_results_brand_id");
+
+                    b.HasIndex("RunId")
+                        .HasDatabaseName("ix_eval_results_run_id");
+
+                    b.ToTable("eval_results");
+                });
+
+            modelBuilder.Entity("Backend.Core.Domain.EvalRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Aggregates")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("aggregates");
+
+                    b.Property<Guid>("BrandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("brand_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DatasetName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("dataset_name");
+
+                    b.Property<int>("DatasetSize")
+                        .HasColumnType("integer")
+                        .HasColumnName("dataset_size");
+
+                    b.Property<string>("DatasetVersion")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("dataset_version");
+
+                    b.Property<string>("GitSha")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("git_sha");
+
+                    b.Property<string>("ModelName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("model_name");
+
+                    b.Property<string>("ModelVersion")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("model_version");
+
+                    b.Property<string>("PromptVersion")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("prompt_version");
+
+                    b.Property<double>("Temperature")
+                        .HasColumnType("double precision")
+                        .HasColumnName("temperature");
+
+                    b.HasKey("Id")
+                        .HasName("pk_eval_runs");
+
+                    b.HasIndex("BrandId")
+                        .HasDatabaseName("ix_eval_runs_brand_id");
+
+                    b.ToTable("eval_runs");
+                });
+
             modelBuilder.Entity("Backend.Core.Domain.KnowledgeChunk", b =>
                 {
                     b.Property<Guid>("Id")
@@ -495,6 +625,12 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("brand_id");
 
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("channel");
+
                     b.Property<Guid>("ContentItemId")
                         .HasColumnType("uuid")
                         .HasColumnName("content_item_id");
@@ -527,8 +663,9 @@ namespace Backend.Infrastructure.Persistence.Migrations
                     b.HasIndex("BrandId")
                         .HasDatabaseName("ix_publish_records_brand_id");
 
-                    b.HasIndex("ContentItemId")
-                        .HasDatabaseName("ix_publish_records_content_item_id");
+                    b.HasIndex("ContentItemId", "Channel")
+                        .IsUnique()
+                        .HasDatabaseName("ix_publish_records_content_item_id_channel");
 
                     b.ToTable("publish_records");
                 });
@@ -563,6 +700,16 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_run_checkpoints_brand_id");
 
                     b.ToTable("run_checkpoints");
+                });
+
+            modelBuilder.Entity("Backend.Core.Domain.EvalResultRow", b =>
+                {
+                    b.HasOne("Backend.Core.Domain.EvalRun", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_eval_results_eval_runs_run_id");
                 });
 #pragma warning restore 612, 618
         }

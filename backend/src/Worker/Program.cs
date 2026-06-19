@@ -26,7 +26,7 @@ builder.Services.AddKnowledge(builder.Configuration);
 builder.Services.AddHangfireJobStore(builder.Configuration, installSchema: true);
 builder.Services.AddHangfireWorker();
 builder.Services.AddStorage();
-builder.Services.AddMetaIntegration();
+builder.Services.AddMetaIntegration(builder.Configuration);
 builder.Services.AddTracing(builder.Configuration);
 builder.Services.AddGeneration(builder.Configuration);
 builder.Services.AddOrchestration();

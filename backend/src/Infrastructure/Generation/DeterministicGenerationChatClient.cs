@@ -24,15 +24,23 @@ public sealed partial class DeterministicGenerationChatClient : IChatClient
 
     private readonly HashSet<string> _failTools;
     private readonly HashSet<string> _flakyTools;
+    private readonly IReadOnlyList<string>? _groundingClaim;
     private readonly Dictionary<string, int> _callCounts = new(StringComparer.Ordinal);
 
     public DeterministicGenerationChatClient(
         IEnumerable<string>? failTools = null,
-        IEnumerable<string>? flakyTools = null)
+        IEnumerable<string>? flakyTools = null,
+        IEnumerable<string>? groundingClaim = null)
     {
         _failTools = (failTools ?? []).ToHashSet(StringComparer.Ordinal);
         _flakyTools = (flakyTools ?? []).ToHashSet(StringComparer.Ordinal);
+        // When set, the canned agent outputs CLAIM these chunk ids in their grounding (raw, pre-reconcile)
+        // — used by the DL-054 grounding-honesty end-to-end proof. Default: ungrounded (empty claim).
+        _groundingClaim = groundingClaim?.ToList();
     }
+
+    private Grounding ClaimGrounding() =>
+        new(Grounded: _groundingClaim is { Count: > 0 }, ChunkIdsUsed: _groundingClaim ?? [], Confidence.Medium);
 
     public Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
@@ -76,7 +84,7 @@ public sealed partial class DeterministicGenerationChatClient : IChatClient
         return options?.Tools?.OfType<AITool>().FirstOrDefault()?.Name ?? string.Empty;
     }
 
-    private static Dictionary<string, object?> BuildArguments(string toolName, string prompt, bool invalid) =>
+    private Dictionary<string, object?> BuildArguments(string toolName, string prompt, bool invalid) =>
         toolName switch
         {
             "record_strategy_candidates" => StrategyArguments(prompt, invalid),
@@ -86,7 +94,7 @@ public sealed partial class DeterministicGenerationChatClient : IChatClient
             _ => new Dictionary<string, object?>(),
         };
 
-    private static Dictionary<string, object?> StrategyArguments(string prompt, bool invalid)
+    private Dictionary<string, object?> StrategyArguments(string prompt, bool invalid)
     {
         if (invalid)
         {
@@ -95,7 +103,7 @@ public sealed partial class DeterministicGenerationChatClient : IChatClient
         }
 
         var pillar = ExtractPillar(prompt);
-        var grounding = new Grounding(Grounded: false, ChunkIdsUsed: [], Confidence.Low);
+        var grounding = ClaimGrounding();
         var candidates = Enumerable.Range(0, 3)
             .Select(i => new ContentStrategy(
                 Pillar: pillar,
@@ -113,7 +121,7 @@ public sealed partial class DeterministicGenerationChatClient : IChatClient
         // invalid → chosenIndex out of range (a validation failure).
         ToArguments(new SelectionDecision(ChosenIndex: invalid ? 99 : 0, Rationale: "the strongest on-brand angle"));
 
-    private static Dictionary<string, object?> CreativeArguments(bool invalid)
+    private Dictionary<string, object?> CreativeArguments(bool invalid)
     {
         if (invalid)
         {
@@ -134,11 +142,11 @@ public sealed partial class DeterministicGenerationChatClient : IChatClient
             StyleTokens: ["warm", "natural-light", "texture-over-gloss"],
             ColorTokens: [new ColorToken("kraft", "#C9A27E")],
             MediaPromptBrief: brief,
-            Grounding: new Grounding(Grounded: false, ChunkIdsUsed: [], Confidence.Low));
+            Grounding: ClaimGrounding());
         return ToArguments(creative);
     }
 
-    private static Dictionary<string, object?> CaptionArguments(bool invalid)
+    private Dictionary<string, object?> CaptionArguments(bool invalid)
     {
         if (invalid)
         {
@@ -150,7 +158,7 @@ public sealed partial class DeterministicGenerationChatClient : IChatClient
             Hook: "Slow mornings start here",
             Body: "A pour-over ritual with our Ethiopia Yirgacheffe — bloom, pour, breathe.",
             Hashtags: ["#coffee", "#pourover", "#singleorigin"],
-            Grounding: new Grounding(Grounded: false, ChunkIdsUsed: [], Confidence.Low));
+            Grounding: ClaimGrounding());
         return ToArguments(caption);
     }
 

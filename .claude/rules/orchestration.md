@@ -35,8 +35,8 @@ paths:
 - `Scheduled` (approved, waiting) and `Cancelled` (terminal) are APPENDED `RunStatus` members — never renumber existing values (they are persisted). Cancel-before-fire calls Hangfire `Delete`; reschedule is cancel-then-reschedule (no new transition).
 
 ## Idempotency (Hangfire retries WILL happen)
-- Every side-effecting segment is idempotent: dedupe on `assetId` (storage) and `contentItemId` (publish). A retried segment that already ran is a no-op, not a duplicate.
-- The publish is TWO-STEP (create media container → poll → publish container) and is NOT naturally idempotent: a crash between the publish step and recording the result, then a retry, would double-post. Before publishing, a pre-publish guard reads the persisted `PublishRecord` for an existing `externalRef` keyed by `contentItemId` and skips if present. The mock MUST model the two-step + crash, or the idempotency test is theater.
+- Every side-effecting segment is idempotent: dedupe on `assetId` (storage) and `(contentItemId, channel)` (publish, DL-055). A retried segment that already ran is a no-op, not a duplicate.
+- The publish is TWO-STEP (create unit → poll → publish) and is NOT naturally idempotent: a crash between the publish step and recording the result, then a retry, would double-post. The pre-publish guard reads the persisted `PublishRecord` keyed `(contentItemId, channel)` and re-enters on its state — the `CreationId` is committed BEFORE publish, so a crash-and-retry re-publishes the **same** container/photo (Meta dedups) rather than double-posting; a finalized record (`ExternalRef` set) is skipped. (Checking only for an existing `externalRef` does NOT close the crash-after-publish-before-record window.) The publish is **channel-aware** and loops the content item's target channels (Instagram + Facebook Page), each an independent `(contentItemId, channel)` unit. The mock MUST model the two-step + both crash windows for both channels, or the idempotency test is theater.
 - Nothing irreversible — paid action, publish — is enqueued without an approval record. The gate stops the run; approval is what resumes it.
 
 ## Failure & tracing

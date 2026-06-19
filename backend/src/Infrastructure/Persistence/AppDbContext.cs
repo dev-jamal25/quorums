@@ -17,6 +17,8 @@ public sealed class AppDbContext : DbContext
 {
     private static readonly JsonSerializerOptions _engagementKeysJsonOptions = new(JsonSerializerDefaults.Web);
 
+    private static readonly JsonSerializerOptions _evalJsonOptions = new(JsonSerializerDefaults.Web);
+
     public AppDbContext(DbContextOptions<AppDbContext> options)
         : base(options)
     {
@@ -46,6 +48,10 @@ public sealed class AppDbContext : DbContext
 
     public DbSet<EvalRecord> EvalRecords => Set<EvalRecord>();
 
+    public DbSet<EvalRun> EvalRuns => Set<EvalRun>();
+
+    public DbSet<EvalResultRow> EvalResults => Set<EvalResultRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -55,18 +61,48 @@ public sealed class AppDbContext : DbContext
         modelBuilder.Entity<ContentItem>().Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
         modelBuilder.Entity<ApprovalAction>().Property(e => e.Action).HasConversion<string>().HasMaxLength(32);
 
-        // The publish-outcome audit row (DL-040). Status is text; the engagement-poll handles are a
-        // small value object serialized to a jsonb column (same idiom as KnowledgeDoc.Metadata).
-        // ContentItemId is indexed for the pre-publish idempotency guard (DL-039).
+        // The publish-outcome audit row (DL-040). Status and Channel are text; the engagement-poll
+        // handles are a small value object serialized to a jsonb column (same idiom as
+        // KnowledgeDoc.Metadata). (ContentItemId, Channel) is the pre-publish idempotency key — one row
+        // per channel — and carries a UNIQUE index so the guard's invariant holds at the DB level
+        // (DL-039, DL-055).
         modelBuilder.Entity<PublishRecord>(entity =>
         {
             entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.Channel).HasConversion<string>().HasMaxLength(32);
             entity.Property(e => e.EngagementKeys)
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, _engagementKeysJsonOptions),
                     v => JsonSerializer.Deserialize<EngagementKeys>(v, _engagementKeysJsonOptions)!)
                 .HasColumnType("jsonb");
-            entity.HasIndex(e => e.ContentItemId);
+            entity.HasIndex(e => new { e.ContentItemId, e.Channel }).IsUnique();
+        });
+
+        // Phase-9 eval persistence (DL-051): the brand-scoped run store. Aggregate metrics and the
+        // per-result structured detail are small value objects serialized to jsonb (same idiom as
+        // PublishRecord.EngagementKeys). eval_results.run_id references eval_runs.id. RLS policies for
+        // both tables ride their creating migration via raw migrationBuilder.Sql.
+        modelBuilder.Entity<EvalRun>(entity =>
+        {
+            entity.Property(e => e.Aggregates)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, _evalJsonOptions),
+                    v => JsonSerializer.Deserialize<IReadOnlyDictionary<string, MetricAggregate>>(v, _evalJsonOptions)
+                        ?? new Dictionary<string, MetricAggregate>())
+                .HasColumnType("jsonb");
+        });
+
+        modelBuilder.Entity<EvalResultRow>(entity =>
+        {
+            entity.Property(e => e.Metadata)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, _evalJsonOptions),
+                    v => JsonSerializer.Deserialize<IReadOnlyDictionary<string, object>>(v, _evalJsonOptions))
+                .HasColumnType("jsonb");
+            entity.HasOne<EvalRun>()
+                .WithMany()
+                .HasForeignKey(e => e.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // RAG schema (DL-016, DL-026). The pgvector extension is created by the migration;

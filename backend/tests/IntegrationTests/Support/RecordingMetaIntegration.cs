@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Backend.Core.Domain;
 using Backend.Core.Integrations;
 using Backend.Core.Orchestration.Contracts;
 using Backend.Infrastructure.Integrations.Meta;
@@ -23,12 +24,12 @@ public sealed class RecordingMetaIntegration : IMetaIntegration
     public Task<ContainerResult> CreateContainerAsync(PublishRequest request, CancellationToken cancellationToken = default)
         => _inner.CreateContainerAsync(request, cancellationToken);
 
-    public Task<ContainerStatus> PollContainerAsync(string creationId, CancellationToken cancellationToken = default)
-        => _inner.PollContainerAsync(creationId, cancellationToken);
+    public Task<ContainerStatus> PollContainerAsync(PublishChannel channel, string creationId, CancellationToken cancellationToken = default)
+        => _inner.PollContainerAsync(channel, creationId, cancellationToken);
 
-    public async Task<PublishResult> PublishContainerAsync(string creationId, CancellationToken cancellationToken = default)
+    public async Task<PublishResult> PublishContainerAsync(PublishChannel channel, string creationId, CancellationToken cancellationToken = default)
     {
-        var result = await _inner.PublishContainerAsync(creationId, cancellationToken).ConfigureAwait(false);
+        var result = await _inner.PublishContainerAsync(channel, creationId, cancellationToken).ConfigureAwait(false);
         _refs.Enqueue(result.ExternalRef);
         return result;
     }

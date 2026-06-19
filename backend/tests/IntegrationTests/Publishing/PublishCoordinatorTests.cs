@@ -23,8 +23,8 @@ public sealed class PublishCoordinatorTests
 
     public PublishCoordinatorTests(DurabilityFixture fixture) => _fixture = fixture;
 
-    private static PublishRequest Request(Guid contentItemId) =>
-        new(contentItemId, PostSurface.FeedImage, "brands/a/assets/x.png", "hook\n\nbody", ["#a"], AccessToken: "token");
+    private static PublishRequest Request(Guid contentItemId, PublishChannel channel = PublishChannel.Instagram) =>
+        new(contentItemId, channel, "placeholder", PostSurface.FeedImage, "brands/a/assets/x.png", "hook\n\nbody", ["#a"], AccessToken: "token");
 
     [Fact]
     public async Task Crash_after_publish_then_retry_yields_exactly_one_published_media()

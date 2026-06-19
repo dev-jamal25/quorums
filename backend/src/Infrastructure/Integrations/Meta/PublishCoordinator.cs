@@ -42,8 +42,10 @@ public sealed class PublishCoordinator
     public async Task<PublishResult> PublishAsync(
         PublishRequest request, Guid runId, Guid brandId, CancellationToken cancellationToken = default)
     {
-        // 1) Inspect the durable state (committed read unit).
-        var snapshot = await ReadSnapshotAsync(request.ContentItemId, cancellationToken).ConfigureAwait(false);
+        var channel = request.Channel;
+
+        // 1) Inspect the durable state for THIS (contentItemId, channel) (committed read unit, DL-055).
+        var snapshot = await FindByContentItemAndChannelAsync(request.ContentItemId, channel, cancellationToken).ConfigureAwait(false);
         if (snapshot.ExternalRef is not null)
         {
             // Finalized already → idempotent skip, no publish.
@@ -55,7 +57,7 @@ public sealed class PublishCoordinator
         if (snapshot.CreationId is { } existing)
         {
             creationId = existing;
-            await BumpAttemptAsync(request.ContentItemId, cancellationToken).ConfigureAwait(false);
+            await BumpAttemptAsync(request.ContentItemId, channel, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -73,7 +75,7 @@ public sealed class PublishCoordinator
         }
 
         // 3) Poll until processed.
-        var status = await _meta.PollContainerAsync(creationId, cancellationToken).ConfigureAwait(false);
+        var status = await _meta.PollContainerAsync(channel, creationId, cancellationToken).ConfigureAwait(false);
         if (!status.Processed)
         {
             var failure = status.Failure ?? PublishStatus.TransientFailure;
@@ -83,7 +85,7 @@ public sealed class PublishCoordinator
 
         // 4) Publish (idempotent on creationId). A crash after this returns but before finalize leaves
         //    the committed CreationId, so the retry re-publishes the SAME container (deduped).
-        var result = await _meta.PublishContainerAsync(creationId, cancellationToken).ConfigureAwait(false);
+        var result = await _meta.PublishContainerAsync(channel, creationId, cancellationToken).ConfigureAwait(false);
         if (result.Status != PublishStatus.Published)
         {
             await UpsertAsync(request, runId, brandId, creationId, result.Status, null, null, cancellationToken).ConfigureAwait(false);
@@ -95,22 +97,22 @@ public sealed class PublishCoordinator
         return result;
     }
 
-    private async Task<(string? CreationId, string? ExternalRef, EngagementKeys? EngagementKeys)> ReadSnapshotAsync(
-        Guid contentItemId, CancellationToken cancellationToken)
+    private async Task<(string? CreationId, string? ExternalRef, EngagementKeys? EngagementKeys)> FindByContentItemAndChannelAsync(
+        Guid contentItemId, PublishChannel channel, CancellationToken cancellationToken)
     {
         await using var handle = await _scope.BeginAsync(cancellationToken).ConfigureAwait(false);
         var record = await _db.PublishRecords.AsNoTracking()
-            .FirstOrDefaultAsync(r => r.ContentItemId == contentItemId, cancellationToken)
+            .FirstOrDefaultAsync(r => r.ContentItemId == contentItemId && r.Channel == channel, cancellationToken)
             .ConfigureAwait(false);
         await handle.CompleteAsync(cancellationToken).ConfigureAwait(false);
         return (record?.CreationId, record?.ExternalRef, record?.EngagementKeys);
     }
 
-    private async Task BumpAttemptAsync(Guid contentItemId, CancellationToken cancellationToken)
+    private async Task BumpAttemptAsync(Guid contentItemId, PublishChannel channel, CancellationToken cancellationToken)
     {
         await using var handle = await _scope.BeginAsync(cancellationToken).ConfigureAwait(false);
         var record = await _db.PublishRecords
-            .FirstOrDefaultAsync(r => r.ContentItemId == contentItemId, cancellationToken)
+            .FirstOrDefaultAsync(r => r.ContentItemId == contentItemId && r.Channel == channel, cancellationToken)
             .ConfigureAwait(false);
         if (record is not null)
         {
@@ -130,7 +132,7 @@ public sealed class PublishCoordinator
         await using var handle = await _scope.BeginAsync(cancellationToken).ConfigureAwait(false);
 
         var record = await _db.PublishRecords
-            .FirstOrDefaultAsync(r => r.ContentItemId == request.ContentItemId, cancellationToken)
+            .FirstOrDefaultAsync(r => r.ContentItemId == request.ContentItemId && r.Channel == request.Channel, cancellationToken)
             .ConfigureAwait(false);
 
         if (record is null)
@@ -141,6 +143,7 @@ public sealed class PublishCoordinator
                 BrandId = brandId,
                 AgentRunId = runId,
                 ContentItemId = request.ContentItemId,
+                Channel = request.Channel,
                 CreationId = creationId,
                 Status = status,
                 ExternalRef = externalRef,

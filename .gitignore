@@ -39,3 +39,11 @@ Thumbs.db
 # docker-compose.yml keeps --model-id on the Hub repo so CI still pulls.
 tei-models/
 docker-compose.override.yml
+
+# --- eval (Phase 9): Microsoft.Extensions.AI.Evaluation disk store + cache + generated reports ---
+# Datasets under eval/datasets/ ARE committed (versioned JSON); the disk result store / response cache
+# and the dotnet aieval HTML report are local artifacts (the queryable store is RLS Postgres).
+eval/.report-store/
+eval/*.html
+
+mc.exe

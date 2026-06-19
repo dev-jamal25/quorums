@@ -1,4 +1,5 @@
 using Backend.Core.Domain;
+using Backend.Core.Generation;
 using Backend.Core.Generation.PlatformConstraints;
 using Backend.Core.Integrations;
 using Backend.Core.Multitenancy;
@@ -32,6 +33,7 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
     private readonly PlatformConstraintSet _constraints;
     private readonly ISecretsProvider _secrets;
     private readonly ITrace _trace;
+    private readonly string _publicBaseUrl;
 
     public PublishingExecutor(
         PublishCoordinator coordinator,
@@ -39,7 +41,8 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
         IBrandScope scope,
         PlatformConstraintSet constraints,
         ISecretsProvider secrets,
-        ITrace trace)
+        ITrace trace,
+        string publicBaseUrl)
         : base("publishing")
     {
         _coordinator = coordinator;
@@ -48,6 +51,7 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
         _constraints = constraints;
         _secrets = secrets;
         _trace = trace;
+        _publicBaseUrl = publicBaseUrl;
     }
 
     public override ValueTask<RunState> HandleAsync(
@@ -116,31 +120,68 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
                 "publish.surface_unconfigured", cancellationToken).ConfigureAwait(false);
         }
 
+        // Hashtags live INSIDE the caption on IG/FB — neither channel has a separate hashtags param
+        // (DL-055) — so compose them into the wire caption. Re-check the caption alone, the hashtag
+        // COUNT, AND the COMBINED length against the cap (a near-limit caption + hashtags must fail here,
+        // before any Meta call, not at Meta).
+        var composedCaption = CaptionComposer.Compose(effectiveCaption, effectiveHashtags);
+
         var captionCheck = PlatformConstraintValidator.ValidateCaptionLength(effectiveCaption, surfaceConstraints);
         var hashtagCheck = PlatformConstraintValidator.ValidateHashtags(effectiveHashtags, surfaceConstraints);
-        if (!captionCheck.IsValid || !hashtagCheck.IsValid)
+        var composedCheck = PlatformConstraintValidator.ValidateCaptionLength(composedCaption, surfaceConstraints);
+        if (!captionCheck.IsValid || !hashtagCheck.IsValid || !composedCheck.IsValid)
         {
-            var detail = !captionCheck.IsValid ? captionCheck.Error : hashtagCheck.Error;
+            var detail = !captionCheck.IsValid ? captionCheck.Error
+                : !hashtagCheck.IsValid ? hashtagCheck.Error
+                : composedCheck.Error;
             return await FinishAsync(
                 state, startedAt, Terminal(detail ?? "publish-time constraint violation"),
                 "publish.constraint_violation", cancellationToken).ConfigureAwait(false);
         }
 
-        // 5) Publish via the coordinator (idempotency + PublishRecord persistence owned there).
-        var request = new PublishRequest(
-            ContentItemId: state.RunId,
-            Surface: MapSurface(state.TargetSurface),
-            MediaUrl: state.Draft?.MediaRef?.StorageKey ?? state.Media?.StorageKey ?? string.Empty,
-            Caption: effectiveCaption,
-            Hashtags: effectiveHashtags,
-            AccessToken: accessToken);
+        // 5) Resolve the brand's connected channels from BrandMetaConnection (DL-055): Instagram when an
+        //    IG Business Account id is set, Facebook Page when a Page id is set. Each is its own
+        //    (contentItemId, channel) crash-safe unit. No connected channel → terminal, no publish.
+        var channels = ResolveChannels(connection);
+        if (channels.Count == 0)
+        {
+            return await FinishAsync(
+                state, startedAt,
+                Terminal("No Meta channel is connected for this brand (set a Facebook Page id and/or IG Business Account id)."),
+                "meta.no_channel", cancellationToken).ConfigureAwait(false);
+        }
 
-        var result = await _coordinator
-            .PublishAsync(request, state.RunId, state.BrandId, cancellationToken)
-            .ConfigureAwait(false);
+        // The Meta-reachable public URL Meta fetches server-side: {Storage:PublicBaseUrl} + the brand-
+        // prefixed asset key (DL-055). Empty base (CI/mock) leaves the bare key — the mock ignores it.
+        var mediaUrl = BuildMediaUrl(state.Draft?.MediaRef?.StorageKey ?? state.Media?.StorageKey ?? string.Empty);
 
-        // 6) Record the classified result; ResumeRun maps it to Done/Failed/retry.
-        return await FinishAsync(state, startedAt, result, "meta.publish_failed", cancellationToken).ConfigureAwait(false);
+        PublishResult? result = null;
+        foreach (var (channel, targetId) in channels)
+        {
+            var request = new PublishRequest(
+                ContentItemId: state.RunId,
+                Channel: channel,
+                TargetId: targetId,
+                Surface: MapSurface(state.TargetSurface),
+                MediaUrl: mediaUrl,
+                Caption: composedCaption,        // caption + hashtags as one string — the published text
+                Hashtags: effectiveHashtags,     // structured list retained for the record/observability
+                AccessToken: accessToken);
+
+            result = await _coordinator
+                .PublishAsync(request, state.RunId, state.BrandId, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Stop on the first channel that does not publish; ResumeRun maps it to retry/Failed.
+            if (result.Status != PublishStatus.Published)
+            {
+                break;
+            }
+        }
+
+        // 6) Record the classified result; ResumeRun maps it to Done/Failed/retry. `channels` is
+        //    non-empty here (guarded above), so `result` is always assigned.
+        return await FinishAsync(state, startedAt, result!, "meta.publish_failed", cancellationToken).ConfigureAwait(false);
     }
 
     private static PublishResult Terminal(string error) =>
@@ -171,6 +212,31 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
             Trace = trace,
         };
     }
+
+    // The brand's connected channels and their TargetIds, derived from BrandMetaConnection (DL-055):
+    // Instagram when an IG Business Account id is present, Facebook Page when a Page id is present.
+    private static List<(PublishChannel Channel, string TargetId)> ResolveChannels(BrandMetaConnection connection)
+    {
+        var channels = new List<(PublishChannel, string)>(2);
+        if (!string.IsNullOrWhiteSpace(connection.IgBusinessAccountId))
+        {
+            channels.Add((PublishChannel.Instagram, connection.IgBusinessAccountId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(connection.FacebookPageId))
+        {
+            channels.Add((PublishChannel.FacebookPage, connection.FacebookPageId));
+        }
+
+        return channels;
+    }
+
+    // {Storage:PublicBaseUrl}/brands/{brand_id}/assets/{asset_id}.png (DL-055). An empty base leaves the
+    // bare storage key (CI/mock, where MediaUrl is ignored).
+    private string BuildMediaUrl(string storageKey) =>
+        string.IsNullOrEmpty(_publicBaseUrl)
+            ? storageKey
+            : $"{_publicBaseUrl.TrimEnd('/')}/{storageKey.TrimStart('/')}";
 
     private static string Compose(string hook, string body) => $"{hook}\n\n{body}";
 

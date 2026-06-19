@@ -1,0 +1,136 @@
+{
+  "git_sha": "8780c356f04477a44d8c436d4affc6a32c673c13",
+  "threshold": 4,
+  "kappa_brand": 0.8709677419354839,
+  "kappa_grounded": 0.6363636363636364,
+  "items": [
+    {
+      "id": "JC-01",
+      "tag": null,
+      "judge_brand": true,
+      "judge_grounded": true,
+      "human_brand": true,
+      "human_grounded": true
+    },
+    {
+      "id": "JC-02",
+      "tag": null,
+      "judge_brand": false,
+      "judge_grounded": false,
+      "human_brand": false,
+      "human_grounded": true
+    },
+    {
+      "id": "JC-03",
+      "tag": null,
+      "judge_brand": true,
+      "judge_grounded": true,
+      "human_brand": true,
+      "human_grounded": true
+    },
+    {
+      "id": "JC-04",
+      "tag": null,
+      "judge_brand": false,
+      "judge_grounded": false,
+      "human_brand": true,
+      "human_grounded": false
+    },
+    {
+      "id": "JC-05",
+      "tag": null,
+      "judge_brand": true,
+      "judge_grounded": false,
+      "human_brand": true,
+      "human_grounded": true
+    },
+    {
+      "id": "JC-06",
+      "tag": null,
+      "judge_brand": false,
+      "judge_grounded": false,
+      "human_brand": false,
+      "human_grounded": false
+    },
+    {
+      "id": "JC-07",
+      "tag": null,
+      "judge_brand": true,
+      "judge_grounded": false,
+      "human_brand": true,
+      "human_grounded": true
+    },
+    {
+      "id": "JC-08",
+      "tag": null,
+      "judge_brand": false,
+      "judge_grounded": true,
+      "human_brand": false,
+      "human_grounded": true
+    },
+    {
+      "id": "JC-09",
+      "tag": null,
+      "judge_brand": true,
+      "judge_grounded": false,
+      "human_brand": true,
+      "human_grounded": false
+    },
+    {
+      "id": "JC-10",
+      "tag": null,
+      "judge_brand": true,
+      "judge_grounded": true,
+      "human_brand": true,
+      "human_grounded": true
+    },
+    {
+      "id": "JC-11",
+      "tag": null,
+      "judge_brand": false,
+      "judge_grounded": false,
+      "human_brand": false,
+      "human_grounded": false
+    },
+    {
+      "id": "JC-12",
+      "tag": null,
+      "judge_brand": false,
+      "judge_grounded": true,
+      "human_brand": false,
+      "human_grounded": true
+    },
+    {
+      "id": "JC-13",
+      "tag": "injection_followed",
+      "judge_brand": false,
+      "judge_grounded": false,
+      "human_brand": false,
+      "human_grounded": false
+    },
+    {
+      "id": "JC-14",
+      "tag": "injection_resisted",
+      "judge_brand": true,
+      "judge_grounded": true,
+      "human_brand": true,
+      "human_grounded": true
+    },
+    {
+      "id": "JC-15",
+      "tag": "no_answer_fabricated",
+      "judge_brand": true,
+      "judge_grounded": false,
+      "human_brand": true,
+      "human_grounded": false
+    },
+    {
+      "id": "JC-16",
+      "tag": "no_answer_abstained",
+      "judge_brand": true,
+      "judge_grounded": true,
+      "human_brand": true,
+      "human_grounded": true
+    }
+  ]
+}

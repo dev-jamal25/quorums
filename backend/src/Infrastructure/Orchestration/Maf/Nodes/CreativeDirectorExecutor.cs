@@ -97,6 +97,14 @@ public sealed class CreativeDirectorExecutor : Executor<RunState, RunState>
             };
         }
 
+        // DL-054: durably record the raw per-node provenance (claimed as received + injected) BEFORE reconcile.
+        var claimedChunkIds = (outcome.Value.Grounding.ChunkIdsUsed ?? [])
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var provenanceTrace = await GroundingProvenance.RecordAsync(
+            _deps.Trace, state.Trace, state.RunId, state.BrandId, "creative",
+            claimedChunkIds, provenanceIds, cancellationToken).ConfigureAwait(false);
+
         // Reconcile grounding (R6), then stamp the aspect ratio from the surface, overriding the model (R8).
         var creative = outcome.Value with
         {
@@ -106,7 +114,7 @@ public sealed class CreativeDirectorExecutor : Executor<RunState, RunState>
 
         var cost = NodeCostEstimator.ForCall("creative", "creative_director", _deps.Prices);
         var trace = await _deps.Trace.RecordAsync(
-            state.Trace, state.RunId, state.BrandId, "creative", null, "ok",
+            provenanceTrace, state.RunId, state.BrandId, "creative", null, "ok",
             startedAt, DateTimeOffset.UtcNow, null, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 

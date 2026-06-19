@@ -139,6 +139,9 @@ agent query
 - The metadata **blend lives in `PgVectorRetrieval`**; `IRerankProvider` returns
   pure cross-encoder relevance. Keep that boundary clean.
 - **Blend weights, N, k, variant count are config-bound, never hardcoded.**
+- **S2 rerank defaults OFF (DL-056)** — the cross-encoder regresses rank-aware
+  precision at per-tenant corpus scale (Phase-9 ablation); config-gated and
+  re-enableable, revisit per the DL-056 trigger.
 
 Stage-by-stage detail, blend math, config knobs → `references/retrieval-pipeline.md`.
 

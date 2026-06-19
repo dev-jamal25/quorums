@@ -50,16 +50,19 @@ public sealed class PublishTests
     }
 
     [Fact]
-    public async Task Mock_publish_is_deterministic_for_the_same_content_id()
+    public async Task Mock_publish_is_deterministic_for_the_same_content_id_and_channel()
     {
-        // The published media id is keyed on the content item id; two separate create+publish
-        // cycles for the same content must yield the same external ref (DL-039).
+        // The published media id is keyed on (contentItemId, channel); two separate create+publish
+        // cycles for the same content+channel must yield the same external ref (DL-039, DL-055).
         var contentItemId = Guid.NewGuid();
-        var expected = $"mock://meta/{DeterministicGuid.From(contentItemId, "meta")}";
+        const PublishChannel channel = PublishChannel.Instagram;
+        var expected = $"mock://meta/{channel}/{DeterministicGuid.From(contentItemId, $"{channel}:meta")}";
 
         var meta = new Backend.Infrastructure.Integrations.Meta.MockMetaIntegration();
         var request = new Core.Integrations.PublishRequest(
             ContentItemId: contentItemId,
+            Channel: channel,
+            TargetId: "placeholder",
             Surface: Core.Integrations.PostSurface.FeedImage,
             MediaUrl: "k",
             Caption: "c",
@@ -67,9 +70,9 @@ public sealed class PublishTests
             AccessToken: string.Empty);
 
         var c1 = await meta.CreateContainerAsync(request);
-        var first = await meta.PublishContainerAsync(c1.CreationId!);
+        var first = await meta.PublishContainerAsync(channel, c1.CreationId!);
         var c2 = await meta.CreateContainerAsync(request);
-        var second = await meta.PublishContainerAsync(c2.CreationId!);
+        var second = await meta.PublishContainerAsync(channel, c2.CreationId!);
 
         Assert.Equal(expected, first.ExternalRef);
         Assert.Equal(first.ExternalRef, second.ExternalRef);

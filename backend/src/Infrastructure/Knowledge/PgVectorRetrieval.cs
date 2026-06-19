@@ -225,6 +225,19 @@ public sealed class PgVectorRetrieval : IRetrievalService
 
         var rel = scores.ToDictionary(s => s.Index, s => s.Relevance);
         var relMin = rel.Values.Min();
+
+        if (!_options.BlendEnabled)
+        {
+            // Cross-encoder-only (DL-025 diagnostic): order by the pure bge relevance, skipping the
+            // per-docType perf/recency blend — isolates the cross-encoder's contribution from the blend's.
+            var byRelevance = candidates
+                .Select((c, i) => ToChunk(c, rel.GetValueOrDefault(i, relMin)))
+                .OrderByDescending(x => x.Score)
+                .Take(topK)
+                .ToList();
+            return (byRelevance, null);
+        }
+
         var relMax = rel.Values.Max();
         var perfRaw = candidates.Select(Performance).ToList();
         var perfMin = perfRaw.Where(p => p.HasValue).Select(p => p!.Value).DefaultIfEmpty(0).Min();

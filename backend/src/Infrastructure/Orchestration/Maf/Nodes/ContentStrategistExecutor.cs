@@ -110,6 +110,16 @@ public sealed partial class ContentStrategistExecutor : Executor<RunState, RunSt
             };
         }
 
+        // DL-054: durably record the raw per-node provenance — the model's claimed ids (union across
+        // candidates, as received) and the injected ids — BEFORE Reconcile overwrites chunkIdsUsed.
+        var claimedChunkIds = outcome.Value.Candidates
+            .SelectMany(candidate => candidate.Grounding.ChunkIdsUsed ?? [])
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var provenanceTrace = await GroundingProvenance.RecordAsync(
+            _deps.Trace, state.Trace, state.RunId, state.BrandId, "strategy",
+            claimedChunkIds, provenanceIds, cancellationToken).ConfigureAwait(false);
+
         var reconciled = outcome.Value.Candidates
             .Select(candidate => candidate with
             {
@@ -119,7 +129,7 @@ public sealed partial class ContentStrategistExecutor : Executor<RunState, RunSt
 
         var cost = NodeCostEstimator.ForCall("strategy", "content_strategist", _deps.Prices);
         var trace = await _deps.Trace.RecordAsync(
-            state.Trace, state.RunId, state.BrandId, "strategy", null, "ok",
+            provenanceTrace, state.RunId, state.BrandId, "strategy", null, "ok",
             startedAt, DateTimeOffset.UtcNow, null, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
