@@ -61,18 +61,21 @@ public sealed class AppDbContext : DbContext
         modelBuilder.Entity<ContentItem>().Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
         modelBuilder.Entity<ApprovalAction>().Property(e => e.Action).HasConversion<string>().HasMaxLength(32);
 
-        // The publish-outcome audit row (DL-040). Status is text; the engagement-poll handles are a
-        // small value object serialized to a jsonb column (same idiom as KnowledgeDoc.Metadata).
-        // ContentItemId is indexed for the pre-publish idempotency guard (DL-039).
+        // The publish-outcome audit row (DL-040). Status and Channel are text; the engagement-poll
+        // handles are a small value object serialized to a jsonb column (same idiom as
+        // KnowledgeDoc.Metadata). (ContentItemId, Channel) is the pre-publish idempotency key — one row
+        // per channel — and carries a UNIQUE index so the guard's invariant holds at the DB level
+        // (DL-039, DL-055).
         modelBuilder.Entity<PublishRecord>(entity =>
         {
             entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.Channel).HasConversion<string>().HasMaxLength(32);
             entity.Property(e => e.EngagementKeys)
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, _engagementKeysJsonOptions),
                     v => JsonSerializer.Deserialize<EngagementKeys>(v, _engagementKeysJsonOptions)!)
                 .HasColumnType("jsonb");
-            entity.HasIndex(e => e.ContentItemId);
+            entity.HasIndex(e => new { e.ContentItemId, e.Channel }).IsUnique();
         });
 
         // Phase-9 eval persistence (DL-051): the brand-scoped run store. Aggregate metrics and the

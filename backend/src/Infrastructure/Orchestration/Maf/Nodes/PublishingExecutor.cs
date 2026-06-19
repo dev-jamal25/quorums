@@ -126,21 +126,40 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
                 "publish.constraint_violation", cancellationToken).ConfigureAwait(false);
         }
 
-        // 5) Publish via the coordinator (idempotency + PublishRecord persistence owned there).
-        var request = new PublishRequest(
-            ContentItemId: state.RunId,
-            Surface: MapSurface(state.TargetSurface),
-            MediaUrl: state.Draft?.MediaRef?.StorageKey ?? state.Media?.StorageKey ?? string.Empty,
-            Caption: effectiveCaption,
-            Hashtags: effectiveHashtags,
-            AccessToken: accessToken);
+        // 5) Publish each target channel as its own (contentItemId, channel) unit through the coordinator
+        //    (idempotency + PublishRecord persistence owned there, DL-055). Slice 1 has no per-content
+        //    channel source yet (DL-055 stop/ask #1), so the set is IG-only; Slice 2 supplies the real
+        //    multi-channel set from BrandMetaConnection. The loop shape is what Slice 2 feeds. The
+        //    dual-channel idempotency proof drives the coordinator per channel directly.
+        var channels = new[] { PublishChannel.Instagram };
 
-        var result = await _coordinator
-            .PublishAsync(request, state.RunId, state.BrandId, cancellationToken)
-            .ConfigureAwait(false);
+        PublishResult? result = null;
+        foreach (var channel in channels)
+        {
+            var request = new PublishRequest(
+                ContentItemId: state.RunId,
+                Channel: channel,
+                TargetId: PlaceholderTargetId,
+                Surface: MapSurface(state.TargetSurface),
+                MediaUrl: state.Draft?.MediaRef?.StorageKey ?? state.Media?.StorageKey ?? string.Empty,
+                Caption: effectiveCaption,
+                Hashtags: effectiveHashtags,
+                AccessToken: accessToken);
 
-        // 6) Record the classified result; ResumeRun maps it to Done/Failed/retry.
-        return await FinishAsync(state, startedAt, result, "meta.publish_failed", cancellationToken).ConfigureAwait(false);
+            result = await _coordinator
+                .PublishAsync(request, state.RunId, state.BrandId, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Stop on the first channel that does not publish; ResumeRun maps it to retry/Failed.
+            if (result.Status != PublishStatus.Published)
+            {
+                break;
+            }
+        }
+
+        // 6) Record the classified result; ResumeRun maps it to Done/Failed/retry. `channels` is a
+        //    non-empty constant, so `result` is always assigned.
+        return await FinishAsync(state, startedAt, result!, "meta.publish_failed", cancellationToken).ConfigureAwait(false);
     }
 
     private static PublishResult Terminal(string error) =>
@@ -171,6 +190,10 @@ public sealed class PublishingExecutor : Executor<RunState, RunState>
             Trace = trace,
         };
     }
+
+    // TargetId is part of the DL-055 contract shape but is NOT consumed by the mock; Slice 2 resolves
+    // the real per-brand target (IG Business Account id / Page id) from BrandMetaConnection.
+    private const string PlaceholderTargetId = "placeholder";
 
     private static string Compose(string hook, string body) => $"{hook}\n\n{body}";
 
