@@ -112,7 +112,7 @@ public sealed class RetrievalAblationTests : IClassFixture<RetrievalAblationFixt
 
         var dataset = await JsonDatasetLoader.LoadAsync(DatasetPath());
 
-        // The committed default config — no explicit S2 override. RerankEnabled defaults OFF (DL-055).
+        // The committed default config — no explicit S2 override. RerankEnabled defaults OFF (DL-056).
         var defaultOptions = new RetrievalOptions();
         Assert.False(defaultOptions.RerankEnabled);
 
