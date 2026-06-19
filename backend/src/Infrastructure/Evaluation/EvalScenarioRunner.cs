@@ -85,11 +85,11 @@ public sealed class EvalScenarioRunner
                         BrandId = brandId,
                         CaseId = evalCase.Id,
                         EvaluatorName = metric.Name,
-                        Score = MetricScore(metric),
+                        Score = EvalMetricMapping.Score(metric),
                         Reasoning = metric.Reason,
                         CostUsd = null,
                         LatencyMs = stopwatch.ElapsedMilliseconds,
-                        Metadata = BuildMetadata(metric),
+                        Metadata = EvalMetricMapping.BuildMetadata(metric),
                     });
                 }
             }
@@ -121,33 +121,6 @@ public sealed class EvalScenarioRunner
 
         await _persistence.PersistAsync(run, rows, cancellationToken).ConfigureAwait(false);
         return run;
-    }
-
-    private static double MetricScore(EvaluationMetric metric) => metric switch
-    {
-        BooleanMetric boolean => boolean.Value == true ? 1.0 : 0.0,
-        NumericMetric numeric => numeric.Value ?? 0.0,
-        _ => 0.0,
-    };
-
-    private static Dictionary<string, object>? BuildMetadata(EvaluationMetric metric)
-    {
-        var metadata = new Dictionary<string, object>(StringComparer.Ordinal);
-
-        if (metric.Interpretation is { } interpretation)
-        {
-            metadata["failed"] = interpretation.Failed;
-            metadata["rating"] = interpretation.Rating.ToString();
-        }
-
-        if (metric.Diagnostics is { Count: > 0 } diagnostics)
-        {
-            metadata["diagnostics"] = diagnostics
-                .Select(diagnostic => $"{diagnostic.Severity}: {diagnostic.Message}")
-                .ToArray();
-        }
-
-        return metadata.Count > 0 ? metadata : null;
     }
 
     // The evaluators read the real run from the SystemOutputContext; this minimal conversation is what
