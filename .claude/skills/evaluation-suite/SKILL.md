@@ -3,7 +3,7 @@ name: evaluation-suite
 metadata:
   version: 1.1.0
   foundation: Microsoft.Extensions.AI.Evaluation
-  decisions: DL-046..DL-053
+  decisions: DL-046..DL-054, DL-056
 description: >-
   Implementation contract for the Quorums Phase-9 evaluation suite, built on the first-party
   Microsoft.Extensions.AI.Evaluation library. Use when building, extending, running, or debugging
@@ -13,12 +13,6 @@ description: >-
   the budget-degradation proof, the Gemini LLM-judge and its calibration, golden/adversarial
   dataset authoring and versioning, eval_run/eval_result persistence, and the merge-blocking CI
   gates and branch ruleset. Multi-tenant and scalable. Encodes DL-046 through DL-053; idioms are .NET.
-metadata:
-  project: quorums
-  phase: "9"
-  foundation: Microsoft.Extensions.AI.Evaluation
-  decisions: DL-046..DL-052; adoption + revised boundaries in DL-053
-  version: 1.1.0
 ---
 
 # Quorums — Evaluation Suite (Phase 9)
@@ -173,3 +167,8 @@ slices 1/2/4/5; validate at the end with a "second brand runs with only its gold
 - **Langfuse is optional/config-gated** — its absence never fails a run; `LocalTraceRecorder` fallback.
 - **Mock/cache determinism** makes rule-based tests reproducible and spend-free; never let an eval path
   reach a live provider in CI.
+- **Grounding provenance lives in the durable trace (DL-054):** grounding honesty + the faithfulness
+  floor audit **raw claimed ⊆ injected** per node, sourced from the durable per-node trace provenance
+  (captured at the executor reconcile site) — **not** the output's reconciled `chunkIdsUsed`. Same
+  source on real and mock runs; no injected-id recording double (retry counts still come from
+  `CountingChatClient`).

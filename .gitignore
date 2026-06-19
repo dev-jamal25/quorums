@@ -45,3 +45,5 @@ docker-compose.override.yml
 # and the dotnet aieval HTML report are local artifacts (the queryable store is RLS Postgres).
 eval/.report-store/
 eval/*.html
+
+mc.exe

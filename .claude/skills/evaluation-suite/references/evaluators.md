@@ -31,9 +31,15 @@ guarantees *shape, not truth* — so shape is checked here with rules, never wit
 5. **`objective` / `pillar` validity** — `objective` is the fixed enum
    `{awareness|engagement|conversion|traffic|retention}`; `pillar` validates against the brand
    playbook's pillar list at receipt (a miss → regenerate, per DL-026).
-6. **Grounding honesty (DL-034)** — `grounded` MUST equal `claimedChunkIds ∩ injectedChunkIds`. A
-   caption claiming a chunk id that was **not** injected into its prompt is a faithfulness violation →
-   fail. This is the deterministic faithfulness floor (claim-level faithfulness is a judge metric).
+6. **Grounding honesty (DL-034 / DL-054)** — audits **raw, pre-reconcile `claimed` ⊆ `injected`**, per
+   node: a node claiming a chunk id that was **not** injected into its prompt is a faithfulness
+   violation → fail. **Source the raw `claimedChunkIds` and `injectedChunkIds` from the durable
+   per-node trace provenance (DL-054), NOT from the output's `Grounding.chunkIdsUsed`** — the pipeline
+   reconciles `claimed ∩ injected` inline and discards both inputs, so the post-reconcile field is ⊆
+   injected by construction and a check against it passes trivially. `SystemOutputProjector` reads
+   `ClaimedChunkIdsByNode` + `InjectedChunkIdsByNode` from the trace on real **and** mock runs (there is
+   no injected-id recording double). This is the deterministic faithfulness floor (claim-level
+   faithfulness is a judge metric).
 
 **Budget-degradation invariant (DL-023 / DL-034) — also a rule-based test:**
 
@@ -42,6 +48,13 @@ guarantees *shape, not truth* — so shape is checked here with rules, never wit
   calls** occur, and Copywriting is unaffected. Assert the global ceiling is a fork-time snapshot with
   at most a bounded single-call overshoot, and that `Budget` is written **only** by the Supervisor at
   the join (DL-020/034). Invariant phrasing: *never overspend, never crash, never fail silently.*
+- **Violation matrix (proven).** Beyond the forward assertion above, `BudgetDegradationEvaluator` is
+  proven to **red on every degraded-state violation** — degraded-yet-Gemini-called, degraded-yet-media-present
+  (the overspend leak), degraded-yet-fatal, degraded-yet-caption-dropped — and to pass **vacuously**
+  when the run is not degraded. The two concerns are split across two suites: the runtime
+  *gate-trips-on-breach* guarantee (a real breach degrades and makes **0 Gemini calls**; an under-budget
+  run drives a call, so the gate is the only thing stopping it) lives in `BudgetDegradationGenerationTests`;
+  the evaluator-level violation matrix lives in `BudgetInvariantEvaluatorProofTests`.
 
 Each of the above is small and fully specified; a violation reds CI and blocks the merge.
 
@@ -67,9 +80,10 @@ Notation: for a query `q`, `R_q` = set of golden-relevant chunk ids; the system 
 - **Context precision (rank-aware)** — for the top-k, average of precision@i taken at each rank `i`
   where `rel(d_i) = 1`, i.e. `Σ_i [ rel(d_i) · (relevant in d_1..d_i / i) ] / |R_q ∩ top-k|`. Rewards
   ranking relevant chunks **higher**; this is the primary stage-discriminating metric.
-- **Faithfulness (deterministic floor)** — `grounded = claimedChunkIds ∩ injectedChunkIds` (DL-034).
-  Reported as the fraction of generations with no unsupported chunk claim. (Claim-level faithfulness
-  is in `judge.md`.)
+- **Faithfulness (deterministic floor)** — fraction of generations with **no raw-claimed chunk id
+  outside the injected set**, per node, sourced from the durable per-node trace provenance (DL-034 /
+  DL-054 — the same source as §1 grounding honesty, not the post-reconcile output field). (Claim-level
+  faithfulness is in `judge.md`.)
 
 **The four-stage ablation (DL-025).** Stages: **S0** multi-query → **S1** hybrid dense (pgvector,
 cosine, 768-dim) + sparse (Postgres FTS over the `search_vector` tsvector) → **S2** cross-encoder
@@ -90,18 +104,23 @@ precision / MRR.
 ## §3 — Cost & latency (eval dimensions 3 & 4 · DL-049)
 
 The deck makes cost and latency first-class eval dimensions ("2% more correct, 10× cost" is not a
-win). These are **tracked evals**, read off the verified Langfuse generations (the durable trace
-seam) plus the per-run cost model.
+win). These are **tracked, measure-only** evals — no threshold, no pass/fail (the only cost/latency
+*gate* is the budget-degradation invariant in §1).
 
-- **Per-node** tokens (in/out), cost (Langfuse auto-cost from model + tokens), and latency, for every
-  graph node. The AsyncLocal run-trace context must be set at **both** `ExecuteRun` and
-  `RegenerateRunJob` so no generation is orphaned.
-- **Latency percentiles** — P50 / P95 / P99, computed in the harness over the per-case rows.
-- **Cost source** — `Core/Generation/Cost/` (`TokenBudget` + `MediaBudget`); the dashboard budget
-  panel is a frontend mock and is **not** the cost source — read the real numbers from the cost model
-  + Langfuse.
-- These are **tracked, not merge-blocking** — the only cost/latency *test* is the budget-degradation
-  invariant in §1.
+- **`Estimated Run Cost (USD)`** — reads the **durable** `RunState.Budget.TokensSpent` (estimate-based,
+  in+out **combined**, per-run, reconciled by `AssemblyMerge` from `NodeCost` and checkpointed to
+  Postgres) plus the media count, applying the config-bound `CostPricesOptions` (per-tier rates +
+  `GeminiPerImage`) as a **single blended $/token** from the run's expected mix. It is an **estimate**,
+  not per-tier actuals — and durable `RunState` is the source **rather than Langfuse** precisely because
+  the Langfuse seam is config-gated and **off in CI**. The real per-tier in/out actuals live in Langfuse
+  via `RecordGenerationAsync` for production observability. No hardcoded prices.
+- **`eval_wallclock_ms`** — reads `TraceSpan.StartedAt`/`EndedAt` from the durable trace
+  (`TraceRefs.Spans`, carried on `SystemOutput.Trace`). It is **eval-environment wall-clock, not a
+  production SLO**: under the eval's mock clocks it would only measure the harness if gated, so it is
+  **tracked-only and never gated**. Production latency percentiles (P50/P95/P99) belong on the
+  Langfuse/observability side, not in the eval.
+- Both **persist RLS-scoped** per eval run (`eval_result` rows + aggregates, brand-scoped) via the
+  `eval` runner — proven by `CostLatencyPersistenceTests` over a synthetic durable-record output.
 
 ---
 
