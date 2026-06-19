@@ -1,7 +1,9 @@
 using System.Globalization;
+using Backend.Core.Knowledge;
 using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Evaluation;
 using Backend.Infrastructure.Evaluation.Evaluators;
+using Backend.IntegrationTests.Support;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Xunit.Abstractions;
@@ -99,6 +101,59 @@ public sealed class RetrievalAblationTests : IClassFixture<RetrievalAblationFixt
         ReportDesignedArms(hybrid, crossOnly, hybridRerank);
     }
 
+    [Fact]
+    public async Task Default_config_skips_S2_rerank_entirely_with_zero_cross_encoder_calls()
+    {
+        if (!_fixture.ServicesAvailable)
+        {
+            _output.WriteLine($"SKIP: self-hosted retrieval services unavailable ({_fixture.UnavailableReason}).");
+            return;
+        }
+
+        var dataset = await JsonDatasetLoader.LoadAsync(DatasetPath());
+
+        // The committed default config — no explicit S2 override. RerankEnabled defaults OFF (DL-055).
+        var defaultOptions = new RetrievalOptions();
+        Assert.False(defaultOptions.RerankEnabled);
+
+        // PRIMARY: run the default path with a counting spy → the bge cross-encoder is never invoked. The
+        // gate short-circuits UPSTREAM of the call (no hop ⇒ no reorder), not "call then no-op".
+        var defaultSpy = new CountingRerankProvider(_fixture.Reranker);
+        var defaultRanked = await RetrieveAllAsync(dataset, defaultOptions, defaultSpy);
+        Assert.Equal(0, defaultSpy.Calls);
+
+        // CORROBORATING: identical ranking to an EXPLICIT rerank-off arm under the same eval S0/S1 settings —
+        // confirms no reorder slipped through (the eval uses the mock S0, so compare in-harness, not prod).
+        var explicitOff = new RetrievalOptions
+        {
+            QueryTransformEnabled = defaultOptions.QueryTransformEnabled,
+            DenseEnabled = defaultOptions.DenseEnabled,
+            SparseEnabled = defaultOptions.SparseEnabled,
+            RerankEnabled = false,
+        };
+        var offSpy = new CountingRerankProvider(_fixture.Reranker);
+        var offRanked = await RetrieveAllAsync(dataset, explicitOff, offSpy);
+        Assert.Equal(0, offSpy.Calls);
+        Assert.Equal(ExpectedCaseCount, defaultRanked.Count);
+        foreach (var caseId in defaultRanked.Keys)
+        {
+            Assert.Equal(offRanked[caseId], defaultRanked[caseId]);
+        }
+
+        // GATE IS LOAD-BEARING: explicitly enabling S2 (same S0/S1) DOES invoke the cross-encoder AND reorders
+        // at least one query — so the zero-count above is the config gate, not a wired-out / no-op reranker.
+        var explicitOn = new RetrievalOptions { SparseEnabled = defaultOptions.SparseEnabled, RerankEnabled = true };
+        var onSpy = new CountingRerankProvider(_fixture.Reranker);
+        var onRanked = await RetrieveAllAsync(dataset, explicitOn, onSpy);
+        Assert.True(onSpy.Calls > 0, "explicit rerank-on must invoke the cross-encoder (spy-wiring proof)");
+        Assert.Contains(defaultRanked.Keys, id => !onRanked[id].SequenceEqual(defaultRanked[id]));
+
+        _output.WriteLine(
+            $"Default S2 path: {defaultSpy.Calls} cross-encoder calls (expected 0). Explicit rerank-off: " +
+            $"{offSpy.Calls} calls, ranking identical on all {ExpectedCaseCount} golden queries. Explicit " +
+            $"rerank-on: {onSpy.Calls} calls and reorders — default-off skips the hop, not a no-op.");
+    }
+
     // ---- arm execution ----------------------------------------------------------------------------------
 
     private async Task<RetrievalEvalRunResult> RunArmAsync(
@@ -122,10 +177,11 @@ public sealed class RetrievalAblationTests : IClassFixture<RetrievalAblationFixt
         }
     }
 
-    private async Task<Dictionary<string, IReadOnlyList<Guid>>> RetrieveAllAsync(EvalDataset dataset, RetrievalOptions options)
+    private async Task<Dictionary<string, IReadOnlyList<Guid>>> RetrieveAllAsync(
+        EvalDataset dataset, RetrievalOptions options, IRerankProvider? rerank = null)
     {
         var ranked = new Dictionary<string, IReadOnlyList<Guid>>(StringComparer.Ordinal);
-        var (db, scope, retrieval) = _fixture.CreateRetrieval(options);
+        var (db, scope, retrieval) = _fixture.CreateRetrieval(options, rerank);
         await using (db)
         {
             await using var handle = await scope.BeginAsync();

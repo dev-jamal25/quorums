@@ -127,15 +127,23 @@ public sealed class RetrievalAblationFixture : IAsyncLifetime, IDisposable
         }
     }
 
-    /// <summary>A demo-brand-scoped retrieval over the real nomic-embed + bge-rerank, config-gated by <paramref name="options"/>.</summary>
-    public (AppDbContext Db, IBrandScope Scope, IRetrievalService Retrieval) CreateRetrieval(RetrievalOptions options)
+    /// <summary>The configured real bge cross-encoder reranker (so a test can wrap it in a counting spy).</summary>
+    public IRerankProvider Reranker => _rerank;
+
+    /// <summary>
+    /// A demo-brand-scoped retrieval over the real nomic-embed + bge-rerank, config-gated by
+    /// <paramref name="options"/>. <paramref name="rerankOverride"/> (e.g. a counting spy) replaces the real
+    /// reranker when supplied — for proving the S2 stage is skipped under default-off.
+    /// </summary>
+    public (AppDbContext Db, IBrandScope Scope, IRetrievalService Retrieval) CreateRetrieval(
+        RetrievalOptions options, IRerankProvider? rerankOverride = null)
     {
         var db = CreateDbContext(AppUserConnectionString);
         var brandContext = new BrandContext();
         brandContext.Bind(DemoBrand);
         var scope = new BrandScope(db, brandContext);
         var retrieval = new PgVectorRetrieval(
-            db, _embeddings, _rerank, new DeterministicQueryTransformer(), Options.Create(options));
+            db, _embeddings, rerankOverride ?? _rerank, new DeterministicQueryTransformer(), Options.Create(options));
         return (db, scope, retrieval);
     }
 

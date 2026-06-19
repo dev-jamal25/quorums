@@ -81,6 +81,11 @@ return top-k by score
   for the right audience); `market_intel` blends in recency decay (fresher intel
   wins); everything else is pure relevance (α = 1).
 - `k` (final cut, default ≈ 5) is config-bound.
+- **Rerank defaults OFF at per-tenant corpus scale (DL-055).** The bge cross-encoder
+  regresses rank-aware precision on small corpora (Phase-9 ablation: −0.094 from the
+  cross-encoder itself, blend net-neutral), so `RerankEnabled` defaults off; revisit
+  per the DL-055 trigger (a larger corpus). The stage stays config-gated and
+  re-enableable — the ablation arms and demo comparison turn it on by config.
 
 ## 4. Fusion — union-recall + reranker-as-fusion
 
@@ -118,7 +123,7 @@ config:
 | dense arm on/off | on | S1 |
 | sparse arm on/off | on | S1 |
 | recall depth `N` | ≈ 20 | S1 |
-| rerank on/off | on | S2 |
+| rerank on/off | **off** (DL-055 — regresses at per-tenant corpus scale; re-enableable) | S2 |
 | blend weights α, β, γ, δ | config | S2 |
 | final `k` | ≈ 5 | S2 |
 
