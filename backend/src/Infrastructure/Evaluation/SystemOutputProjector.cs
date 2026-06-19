@@ -18,7 +18,6 @@ namespace Backend.Infrastructure.Evaluation;
 public static class SystemOutputProjector
 {
     private const string GeminiTool = "gemini.generate";
-    private const string OkStatus = "ok";
     private const string BudgetDegradedMarker = "BudgetDegraded";
 
     private static readonly IReadOnlyDictionary<string, int> _emptyRetries =
@@ -42,9 +41,12 @@ public static class SystemOutputProjector
         var budgetDegraded = state.Draft is { MediaRef: null }
             || (state.Media is null && HasBudgetDegradedSpan(state.Trace));
 
+        // Count EVERY gemini.generate span — ok AND error/cancelled. "Zero Gemini calls on a budget
+        // breach" must mean zero ATTEMPTS: on a breach the gate trips upstream so no span opens at all
+        // (count 0); but if the gate ever failed to trip and the call then errored, that opened an error
+        // span — counting only ok-spans would let an errored attempt read as zero (DL-023 hardening).
         var geminiCallCount = state.Trace.Spans
-            .Count(span => string.Equals(span.Tool, GeminiTool, StringComparison.Ordinal)
-                && string.Equals(span.Status, OkStatus, StringComparison.Ordinal));
+            .Count(span => string.Equals(span.Tool, GeminiTool, StringComparison.Ordinal));
 
         return new SystemOutput(
             RunId: state.RunId,
