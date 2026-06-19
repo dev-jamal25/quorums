@@ -14,6 +14,7 @@ namespace Backend.IntegrationTests.Eval;
 /// passes on the projected run. Deterministic clients only → zero API spend.
 /// </summary>
 [Trait("Category", "Eval")]
+[Trait("Category", "EvalGate")]
 [Collection("EvalGeneration")]
 public sealed class BudgetDegradationGenerationTests
 {

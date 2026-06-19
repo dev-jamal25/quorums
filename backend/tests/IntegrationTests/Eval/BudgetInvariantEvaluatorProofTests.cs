@@ -17,6 +17,7 @@ namespace Backend.IntegrationTests.Eval;
 /// past the merge-blocking metric. Pure, deterministic, no LLM, no DB: zero API spend.
 /// </summary>
 [Trait("Category", "Eval")]
+[Trait("Category", "EvalGate")]
 public sealed class BudgetInvariantEvaluatorProofTests
 {
     private static readonly ToolError _fatal = new("generation.media_failed", "boom", false);

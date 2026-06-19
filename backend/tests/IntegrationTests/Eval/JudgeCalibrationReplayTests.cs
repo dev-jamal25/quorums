@@ -11,6 +11,7 @@ namespace Backend.IntegrationTests.Eval;
 /// test regenerates the verdicts (the spend) only when the judge prompt changes.
 /// </summary>
 [Trait("Category", "Eval")]
+[Trait("Category", "EvalGate")]
 public sealed class JudgeCalibrationReplayTests
 {
     private const double KappaGate = 0.6;

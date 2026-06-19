@@ -16,6 +16,7 @@ namespace Backend.IntegrationTests.Eval;
 /// evaluator audits raw <c>claimed ⊆ injected</c>. Deterministic → zero API spend.
 /// </summary>
 [Trait("Category", "Eval")]
+[Trait("Category", "EvalGate")]
 [Collection("EvalGeneration")]
 public sealed class GroundingHonestyEndToEndTests
 {

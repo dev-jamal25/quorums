@@ -16,6 +16,7 @@ namespace Backend.IntegrationTests.Eval;
 /// deterministic, no LLM, no DB: zero API spend.
 /// </summary>
 [Trait("Category", "Eval")]
+[Trait("Category", "EvalGate")]
 public sealed class RuleBasedEvaluatorTests
 {
     private static async Task<bool> PassedAsync(IEvaluator evaluator, SystemOutput output, string metricName)
