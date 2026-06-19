@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -33,9 +32,11 @@ namespace Backend.Infrastructure.Integrations.Meta;
 /// classified (5xx/408/network → transient for the Hangfire retry; 4xx/429-exhausted → terminal).</para>
 /// <para><b>Live recovery seam (DL-042, flagged for the live smoke):</b> the frozen
 /// <c>Poll</c>/<c>Publish(channel, creationId)</c> signatures carry no token/target, so create captures
-/// <c>creationId → (channel, target, token, caption)</c> in memory. A same-process Hangfire retry
-/// recovers from it; only a cross-process restart inside the publish→finalize window loses it (the demo
-/// runs one worker process, so the automatic retry is in-process — this never bites the live smoke).</para>
+/// <c>creationId → (channel, target, token, caption)</c> in the singleton
+/// <see cref="LivePublishContextStore"/>. Because this client is a <b>transient</b> typed
+/// <c>HttpClient</c>, the store MUST outlive the instance — a Hangfire retry resolves a fresh client but
+/// shares the store, so it recovers the committed container (e.g. after an Instagram "container still
+/// processing" poll). Only a true cross-process worker restart loses the store (the documented limit).</para>
 /// </summary>
 public sealed class LiveMetaIntegration : IMetaIntegration
 {
@@ -47,13 +48,15 @@ public sealed class LiveMetaIntegration : IMetaIntegration
     private readonly HttpClient _http;
     private readonly MetaOptions _options;
 
-    // creationId -> the (channel, target, token, caption) the frozen Poll/Publish signatures don't carry.
-    private readonly ConcurrentDictionary<string, PublishContext> _contexts = new();
+    // Singleton store of the (channel, target, token, caption) the frozen Poll/Publish signatures don't
+    // carry — shared across the transient client instances a Hangfire retry resolves.
+    private readonly LivePublishContextStore _contexts;
 
-    public LiveMetaIntegration(HttpClient http, IOptions<MetaOptions> options)
+    public LiveMetaIntegration(HttpClient http, IOptions<MetaOptions> options, LivePublishContextStore contexts)
     {
         _http = http;
         _options = options.Value;
+        _contexts = contexts;
     }
 
     public async Task<ContainerResult> CreateContainerAsync(PublishRequest request, CancellationToken cancellationToken = default)
@@ -83,7 +86,7 @@ public sealed class LiveMetaIntegration : IMetaIntegration
             }
 
             // Capture what poll/publish will need (the signatures carry only channel + creationId).
-            _contexts[id] = new PublishContext(request.Channel, request.TargetId, request.AccessToken, request.Caption);
+            _contexts.Set(id, new LivePublishContext(request.Channel, request.TargetId, request.AccessToken, request.Caption));
             return new ContainerResult(id, null, null);
         }
         catch (Exception ex) when (IsTransient(ex))
@@ -100,7 +103,7 @@ public sealed class LiveMetaIntegration : IMetaIntegration
             return new ContainerStatus(true, null, null);
         }
 
-        if (!_contexts.TryGetValue(creationId, out var context))
+        if (!_contexts.TryGet(creationId, out var context))
         {
             return new ContainerStatus(false, PublishStatus.TransientFailure, ContextMissing);
         }
@@ -132,7 +135,7 @@ public sealed class LiveMetaIntegration : IMetaIntegration
 
     public async Task<PublishResult> PublishContainerAsync(PublishChannel channel, string creationId, CancellationToken cancellationToken = default)
     {
-        if (!_contexts.TryGetValue(creationId, out var context))
+        if (!_contexts.TryGet(creationId, out var context))
         {
             return new PublishResult(PublishStatus.TerminalFailure, null, ContextMissing, null);
         }
@@ -241,8 +244,6 @@ public sealed class LiveMetaIntegration : IMetaIntegration
     }
 
     private static bool IsTransient(Exception ex) => ex is HttpRequestException or TimeoutRejectedException;
-
-    private readonly record struct PublishContext(PublishChannel Channel, string TargetId, string Token, string Caption);
 
     // --- Graph response DTOs (snake_case fields need explicit names; web defaults are camelCase) ----
 

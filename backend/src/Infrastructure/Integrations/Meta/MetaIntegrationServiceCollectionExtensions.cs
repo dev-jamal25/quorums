@@ -30,6 +30,10 @@ public static class MetaIntegrationServiceCollectionExtensions
         var mode = (configuration[$"{MetaOptions.SectionName}:Mode"] ?? "mock").Trim().ToLowerInvariant();
         if (mode == "live")
         {
+            // Singleton so the per-creation publish context survives the transient typed-client instances
+            // a Hangfire retry resolves (DL-055 live recovery seam).
+            services.AddSingleton<LivePublishContextStore>();
+
             var options = configuration.GetSection(MetaOptions.SectionName).Get<MetaOptions>() ?? new MetaOptions { Mode = "live" };
             services
                 .AddHttpClient<IMetaIntegration, LiveMetaIntegration>((sp, client) =>
