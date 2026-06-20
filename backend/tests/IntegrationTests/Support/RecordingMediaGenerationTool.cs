@@ -1,5 +1,4 @@
 using Backend.Core.Integrations;
-using Backend.Core.Orchestration.Contracts;
 using Backend.Infrastructure.Integrations.Gemini;
 
 namespace Backend.IntegrationTests.Support;
@@ -18,15 +17,18 @@ internal sealed class RecordingMediaGenerationTool : IMediaGenerationTool
 
     public int Calls { get; private set; }
 
+    public MediaGenerationRequest? LastRequest { get; private set; }
+
     public Task<MediaResult> GenerateAsync(
-        MediaPromptBrief brief, string modality, CancellationToken cancellationToken = default)
+        MediaGenerationRequest request, CancellationToken cancellationToken = default)
     {
         Calls++;
+        LastRequest = request;
         if (_throwOnCall)
         {
             throw new InvalidOperationException("simulated Gemini failure");
         }
 
-        return _inner.GenerateAsync(brief, modality, cancellationToken);
+        return _inner.GenerateAsync(request, cancellationToken);
     }
 }

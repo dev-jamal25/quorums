@@ -28,6 +28,25 @@ public static class BudgetEvaluation
         return projected <= media.Limit;
     }
 
+    /// <summary>
+    /// Whether one Veo clip is affordable under the media budget (DL-058): video price-per-second ×
+    /// duration, plus the one Nano-Banana image when the source is image-seed. Mirrors
+    /// <see cref="CanAffordMedia"/> — the pre-Media gate degrades to caption-only when this is false,
+    /// before any paid Veo job is submitted.
+    /// </summary>
+    public static bool CanAffordVideo(
+        MediaBudget media, decimal videoPricePerSec, int durationSec, bool includeSeedImage, decimal perImagePrice)
+    {
+        ArgumentNullException.ThrowIfNull(media);
+        var projected = media.Spent + VideoCostUsd(videoPricePerSec, durationSec, includeSeedImage, perImagePrice);
+        return projected <= media.Limit;
+    }
+
+    /// <summary>The dollar cost of one Veo clip (price/sec × duration) plus the seed image when image-seeded.</summary>
+    public static decimal VideoCostUsd(
+        decimal videoPricePerSec, int durationSec, bool includeSeedImage, decimal perImagePrice) =>
+        (videoPricePerSec * durationSec) + (includeSeedImage ? perImagePrice : 0m);
+
     // -- Enforcement point 2: global per-run dollar ceiling (fork-time snapshot, R2) -------------
 
     /// <summary>Whether a fork-time combined-spend snapshot grossly exceeds the run's hard ceiling.</summary>

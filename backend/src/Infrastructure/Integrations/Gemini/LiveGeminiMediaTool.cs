@@ -10,19 +10,22 @@ using Microsoft.Extensions.Options;
 namespace Backend.Infrastructure.Integrations.Gemini;
 
 /// <summary>
-/// Real Gemini image backend behind <see cref="IMediaGenerationTool"/> (selected by
-/// <c>Gemini:Mode=live</c>; mock stays for CI). Renders a <see cref="MediaPromptBrief"/> into a
-/// Developer-API <c>generateContent</c> request and maps the inline-data response
-/// (<c>candidates[].content.parts[].inlineData{mimeType,data}</c>) to <see cref="MediaResult"/>.
-/// The typed <see cref="HttpClient"/> carries the base address, the <c>x-goog-api-key</c> header,
-/// and the transient/429 retry policy (wired in <c>AddGeneration</c>). On a non-success status or a
-/// missing image part it <b>throws</b>; the Media node catches that into a structured
-/// <c>ToolError</c> (retry-then-fail-item, DL-022/023) — never an exception into the graph. The node
-/// owns the deterministic <c>assetId</c> + idempotent MinIO write; this tool returns bytes only.
+/// Real Gemini media backend behind <see cref="IMediaGenerationTool"/> (selected by
+/// <c>Gemini:Mode=live</c>; mock stays for CI). Two paths share one seam (DL-058):
+/// <list type="bullet">
+///   <item><b>image</b> — renders a <see cref="MediaPromptBrief"/> into a Developer-API
+///   <c>generateContent</c> request and maps the inline-data response to <see cref="MediaResult"/>.</item>
+///   <item><b>video</b> — delegates to <see cref="VeoVideoGenerator"/> (the submit-or-resume async core);
+///   for an image-seed run it first reuses the image path to make the Veo first frame, then animates it.</item>
+/// </list>
+/// On a non-success status or a missing part it <b>throws</b>; the Media node catches that into a
+/// structured <c>ToolError</c> — image → fatal, video → caption-only degrade (DL-022/023) — never an
+/// exception into the graph. The node owns the deterministic <c>assetId</c> + idempotent MinIO write;
+/// this tool returns bytes only. <see cref="VeoVideoGenerator"/> is null unless <c>Veo:Mode=live</c>.
 /// </summary>
 public sealed partial class LiveGeminiMediaTool : IMediaGenerationTool
 {
-    private const string ImageModality = "image";
+    private const string VideoModality = "video";
     private const int ErrorBodyLogLimit = 500;
 
     // Web defaults (camelCase) + omit null properties so the request's text part never emits
@@ -34,30 +37,66 @@ public sealed partial class LiveGeminiMediaTool : IMediaGenerationTool
 
     private readonly HttpClient _http;
     private readonly GeminiOptions _options;
+    private readonly VeoVideoGenerator? _veo;
     private readonly ILogger<LiveGeminiMediaTool> _logger;
 
     public LiveGeminiMediaTool(
-        HttpClient http, IOptions<GeminiOptions> options, ILogger<LiveGeminiMediaTool> logger)
+        HttpClient http,
+        IOptions<GeminiOptions> options,
+        ILogger<LiveGeminiMediaTool> logger,
+        VeoVideoGenerator? veo = null)
     {
         _http = http;
         _options = options.Value;
         _logger = logger;
+        _veo = veo;
     }
 
     public async Task<MediaResult> GenerateAsync(
-        MediaPromptBrief brief, string modality, CancellationToken cancellationToken = default)
+        MediaGenerationRequest request, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(brief);
+        ArgumentNullException.ThrowIfNull(request);
+        var brief = request.Brief;
 
-        // Image is the MVP modality (DL-003); video stays banked behind the same interface.
-        if (!string.Equals(modality, ImageModality, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(brief.Modality, VideoModality, StringComparison.OrdinalIgnoreCase))
         {
-            throw new NotSupportedException(
-                $"Gemini media tool supports modality '{ImageModality}' only; got '{modality}' (DL-003).");
+            return await GenerateVideoAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
+        var (bytes, mimeType) = await GenerateImageBytesAsync(brief, cancellationToken).ConfigureAwait(false);
+        return new MediaResult(bytes, mimeType);
+    }
+
+    private async Task<MediaResult> GenerateVideoAsync(
+        MediaGenerationRequest request, CancellationToken cancellationToken)
+    {
+        if (_veo is null)
+        {
+            // Veo:Mode is not live → no video backend. Thrown; the Media node degrades the video run to
+            // caption-only (DL-058 config-gating: an absent Veo never breaks the image path).
+            throw new InvalidOperationException(
+                "Veo video generation is not configured (Veo:Mode=live required).");
+        }
+
+        // Image-seed (default): make the Nano-Banana first frame via the image path (reuse, no duplication)
+        // and hand it to Veo as the reference frame. Text-prompt: no seed, text-to-video.
+        SeedImage? seed = null;
+        if (request.Source == VideoSource.ImageSeed)
+        {
+            var (seedBytes, seedMime) = await GenerateImageBytesAsync(request.Brief, cancellationToken)
+                .ConfigureAwait(false);
+            seed = new SeedImage(seedBytes, seedMime);
+        }
+
+        return await _veo.GenerateAsync(request.Brief, seed, request.AssetId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<(byte[] Bytes, string MimeType)> GenerateImageBytesAsync(
+        MediaPromptBrief brief, CancellationToken cancellationToken)
+    {
         var request = new GeminiRequest(
-            Contents: [new GeminiContent([new GeminiPart(RenderPrompt(brief), InlineData: null)])],
+            Contents: [new GeminiContent([new GeminiPart(MediaPromptRenderer.Render(brief), InlineData: null)])],
             GenerationConfig: new GeminiGenerationConfig(
                 ResponseModalities: [ImageModalityToken],
                 ImageConfig: new GeminiImageConfig(brief.AspectRatio)));
@@ -97,20 +136,7 @@ public sealed partial class LiveGeminiMediaTool : IMediaGenerationTool
         var bytes = Convert.FromBase64String(inline.Data);
         var mimeType = string.IsNullOrWhiteSpace(inline.MimeType) ? "image/png" : inline.MimeType;
         LogGenerated(_options.Model, bytes.Length, mimeType);
-        return new MediaResult(bytes, mimeType);
-    }
-
-    private static string RenderPrompt(MediaPromptBrief brief)
-    {
-        var prompt =
-            $"{brief.Subject}. Style: {brief.Style}. Composition: {brief.Composition}. " +
-            $"Palette: {brief.Palette}. Mood: {brief.Mood}.";
-        if (!string.IsNullOrWhiteSpace(brief.Negative))
-        {
-            prompt += $" Avoid: {brief.Negative}.";
-        }
-
-        return prompt;
+        return (bytes, mimeType);
     }
 
     private static string Truncate(string value) =>

@@ -16,3 +16,11 @@ public enum PostSurface
     Reel,
     Story,
 }
+
+/// <summary>Surface helpers (DL-058): which surfaces are video, so the publisher picks the reel/video Graph flow.</summary>
+public static class PostSurfaces
+{
+    /// <summary>True for the video surfaces (a video run maps to <see cref="PostSurface.Reel"/>, DL-030).</summary>
+    public static bool IsVideo(this PostSurface surface) =>
+        surface is PostSurface.Reel or PostSurface.FeedVideo;
+}

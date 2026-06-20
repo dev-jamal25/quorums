@@ -9,11 +9,13 @@ namespace Backend.Infrastructure.Integrations.Meta;
 /// <summary>
 /// Deterministic, network-free Meta publisher (DL-004, DL-038, DL-055). One channel-aware client that
 /// models BOTH real two-step shapes — Instagram (media container → poll → publish) and Facebook Page
-/// (unpublished photo → poll → feed post) — with in-memory state mirroring Meta's server-side
-/// behaviour: a unique container/photo id per create (so a crashed create leaves a real orphan), and a
-/// re-publish of an already-published container deduped to the SAME media id (no second post, DL-039).
-/// The published media id is keyed on <c>(ContentItemId, Channel)</c>, so it is stable across retries
-/// and DISTINCT per channel.
+/// (unpublished photo/video → poll → feed post) — with in-memory state mirroring Meta's server-side
+/// behaviour: a unique container/photo/video id per create (so a crashed create leaves a real orphan).
+/// Re-publish fidelity is surface-aware (DL-058): an <b>image</b> container is deduped to the SAME media id
+/// (no second post, DL-039), but a <b>video</b> is NOT (re-media_publish of a reel errors; a re-attached FB
+/// video double-posts) — so a second publish of the same <c>(contentItemId, channel)</c> is prevented by
+/// the coordinator's idempotency guard, never a pretend dedup. The published media id is keyed on
+/// <c>(ContentItemId, Channel)</c>, so it is stable across retries and DISTINCT per channel.
 /// <para>For CI it exposes deterministic injection: both failure classes (returned typed, never thrown)
 /// and one-shot crash points in the two durability windows the robust mechanism guards — after create
 /// (before the component persists the <c>CreationId</c>) and after publish (before the component records
@@ -24,8 +26,8 @@ namespace Backend.Infrastructure.Integrations.Meta;
 /// </summary>
 public sealed class MockMetaIntegration : IMetaIntegration
 {
-    private readonly ConcurrentDictionary<string, ContainerState> _containers = new();   // creationId -> (contentItemId, channel)
-    private readonly ConcurrentDictionary<string, byte> _published = new();               // creationIds that have been published
+    private readonly ConcurrentDictionary<string, ContainerState> _containers = new();   // creationId -> (contentItemId, channel, surface)
+    private readonly ConcurrentDictionary<string, PublishChannel> _posts = new();         // postId -> channel (one entry per real post)
 
     // Deterministic test injection (defaults: clean two-step success on both channels).
     public PublishStatus? FailCreateWith { get; set; }
@@ -40,8 +42,8 @@ public sealed class MockMetaIntegration : IMetaIntegration
     public PublishChannel? CrashAfterCreateOnChannel { get; set; }
     public PublishChannel? CrashAfterPublishOnChannel { get; set; }
 
-    /// <summary>Distinct published media across all channels — the "exactly one post" assertion.</summary>
-    public int PublishedMediaCount => _published.Count;
+    /// <summary>Distinct published posts across all channels — the "exactly one post" assertion.</summary>
+    public int PublishedMediaCount => _posts.Count;
 
     /// <summary>Distinct containers created across all channels — proves a crashed create leaves an orphan.</summary>
     public int ContainerCount => _containers.Count;
@@ -54,9 +56,9 @@ public sealed class MockMetaIntegration : IMetaIntegration
 
     private int _publishAttempts;
 
-    /// <summary>Distinct published media on one channel — the per-channel "exactly one post" assertion.</summary>
+    /// <summary>Distinct published posts on one channel — the per-channel "exactly one post" assertion.</summary>
     public int PublishedMediaCountFor(PublishChannel channel) =>
-        _published.Keys.Count(id => _containers.TryGetValue(id, out var state) && state.Channel == channel);
+        _posts.Values.Count(c => c == channel);
 
     /// <summary>Distinct containers created on one channel — proves a crashed create left exactly one orphan.</summary>
     public int ContainerCountFor(PublishChannel channel) =>
@@ -74,9 +76,15 @@ public sealed class MockMetaIntegration : IMetaIntegration
 
         // A real create returns a fresh container/photo id every call, so a crash before the CreationId
         // is persisted leaves a distinct orphan (never published). The prefix names the surface.
-        var prefix = channel == PublishChannel.FacebookPage ? "mock-fb-photo" : "mock-ig-container";
+        var prefix = (channel, request.Surface.IsVideo()) switch
+        {
+            (PublishChannel.FacebookPage, true) => "mock-fb-video",
+            (PublishChannel.FacebookPage, false) => "mock-fb-photo",
+            (_, true) => "mock-ig-reel",
+            (_, false) => "mock-ig-container",
+        };
         var creationId = $"{prefix}-{Guid.NewGuid():N}";
-        _containers[creationId] = new ContainerState(request.ContentItemId, channel);
+        _containers[creationId] = new ContainerState(request.ContentItemId, channel, request.Surface);
 
         if (ShouldCrashAfterCreate(channel))
         {
@@ -119,8 +127,19 @@ public sealed class MockMetaIntegration : IMetaIntegration
         var mediaId = DeterministicGuid.From(state.ContentItemId, $"{channel}:meta").ToString();
         var externalRef = $"mock://meta/{channel}/{mediaId}";
 
-        // Idempotent: a re-publish of an already-published container is deduped — no second post.
-        _published.TryAdd(creationId, 0);
+        // Real-Meta fidelity (DL-058): an IMAGE container is server-side deduped on the committed creation
+        // id (re-publish → the SAME post), but a VIDEO is NOT — re-media_publish of a published reel errors
+        // and a re-attached FB video double-posts. So video records a DISTINCT post per publish call (no
+        // dedup); the coordinator's idempotency GUARD (a finalized PublishRecord), not a pretend dedup, is
+        // what prevents a second publish of the same (contentItemId, channel).
+        if (state.Surface.IsVideo())
+        {
+            _posts[$"{creationId}:{Guid.NewGuid():N}"] = channel;
+        }
+        else
+        {
+            _posts.TryAdd(creationId, channel);
+        }
 
         if (ShouldCrashAfterPublish(channel))
         {
@@ -169,5 +188,5 @@ public sealed class MockMetaIntegration : IMetaIntegration
         return false;
     }
 
-    private readonly record struct ContainerState(Guid ContentItemId, PublishChannel Channel);
+    private readonly record struct ContainerState(Guid ContentItemId, PublishChannel Channel, PostSurface Surface);
 }

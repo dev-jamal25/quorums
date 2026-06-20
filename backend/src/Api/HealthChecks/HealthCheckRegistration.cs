@@ -106,6 +106,21 @@ public static class HealthCheckRegistration
                 tags: [ReadyTag]);
         }
 
+        // Veo (DL-058) is optional: register a check ONLY when Veo:Mode=live, so the default mock mode
+        // never reports /health Unhealthy. Live video reuses the Gemini key, so readiness = that key is
+        // present (presence only — the secret itself is never read into the response).
+        var veoMode = (configuration["Veo:Mode"] ?? "mock").Trim().ToLowerInvariant();
+        if (veoMode == "live")
+        {
+            var geminiKeyPresent = !string.IsNullOrWhiteSpace(configuration["Gemini:ApiKey"]);
+            builder.AddCheck(
+                "veo",
+                () => geminiKeyPresent
+                    ? HealthCheckResult.Healthy("Veo live: Gemini API key configured.")
+                    : HealthCheckResult.Unhealthy("Veo:Mode=live but Gemini:ApiKey is not configured."),
+                tags: [ReadyTag]);
+        }
+
         return services;
     }
 

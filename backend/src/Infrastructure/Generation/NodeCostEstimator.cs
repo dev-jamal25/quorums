@@ -26,4 +26,13 @@ internal static class NodeCostEstimator
 
     /// <summary>The dollar cost the Media node reports for a generated image (0 when degraded).</summary>
     public static NodeCost ForMedia(string node, decimal mediaUsd) => new(node, Tokens: 0, TokenUsd: 0m, mediaUsd);
+
+    /// <summary>
+    /// The dollar cost the Media node reports for a generated Veo clip (DL-058): price/sec × duration,
+    /// plus the seed image for an image-seeded run. Pure pass-through of <see cref="BudgetEvaluation.VideoCostUsd"/>.
+    /// </summary>
+    public static NodeCost ForVideo(
+        string node, decimal videoPricePerSec, int durationSec, bool includeSeedImage, decimal perImagePrice) =>
+        new(node, Tokens: 0, TokenUsd: 0m,
+            MediaUsd: BudgetEvaluation.VideoCostUsd(videoPricePerSec, durationSec, includeSeedImage, perImagePrice));
 }

@@ -122,10 +122,10 @@ public sealed class GeminiMediaLiveTests
         public MediaResult? Last { get; private set; }
 
         public async Task<MediaResult> GenerateAsync(
-            MediaPromptBrief brief, string modality, CancellationToken cancellationToken = default)
+            MediaGenerationRequest request, CancellationToken cancellationToken = default)
         {
             Calls++;
-            Last = await inner.GenerateAsync(brief, modality, cancellationToken).ConfigureAwait(false);
+            Last = await inner.GenerateAsync(request, cancellationToken).ConfigureAwait(false);
             return Last;
         }
     }

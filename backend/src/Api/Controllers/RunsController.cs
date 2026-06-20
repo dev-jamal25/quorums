@@ -3,12 +3,14 @@ using Backend.Api.Dtos;
 using Backend.Core.Domain;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
+using Backend.Core.Orchestration.Contracts;
 using Backend.Core.Storage;
 using Backend.Infrastructure.Configuration.Options;
 using Backend.Infrastructure.Jobs;
 using Backend.Infrastructure.Persistence;
 using Hangfire;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -44,7 +46,9 @@ public sealed class RunsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(CreateRunResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<CreateRunResponse>> Create(CancellationToken cancellationToken)
+    public async Task<ActionResult<CreateRunResponse>> Create(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] CreateRunRequest? request,
+        CancellationToken cancellationToken)
     {
         if (!_brandContext.HasBrand)
         {
@@ -53,6 +57,13 @@ public sealed class RunsController : ControllerBase
 
         var brandId = _brandContext.RequireBrandId();
 
+        // Resolve the per-run modality (DL-058): no body / no modality → Image (no regression). A Video run
+        // defaults videoSource to ImageSeed; an Image run never carries one (the validator rejects it).
+        var modality = request?.Modality ?? Modality.Image;
+        var videoSource = modality == Modality.Video
+            ? request?.VideoSource ?? VideoSource.ImageSeed
+            : (VideoSource?)null;
+
         await using var handle = await _scope.BeginAsync(cancellationToken);
 
         var run = new AgentRun
@@ -60,6 +71,8 @@ public sealed class RunsController : ControllerBase
             Id = Guid.NewGuid(),
             BrandId = brandId,
             Status = RunStatus.Queued,
+            Modality = modality,
+            VideoSource = videoSource,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
@@ -68,9 +81,10 @@ public sealed class RunsController : ControllerBase
         await _db.SaveChangesAsync(cancellationToken);
         await handle.CompleteAsync(cancellationToken);
 
+        // DL-006: the payload is runId only — modality travels through the AgentRun row, so a retry rebuilds it.
         _jobs.Enqueue<ExecuteRunJob>(job => job.ExecuteAsync(run.Id, brandId, CancellationToken.None));
 
-        return Accepted($"/runs/{run.Id}", new CreateRunResponse(run.Id));
+        return Accepted($"/runs/{run.Id}", new CreateRunResponse(run.Id, modality, videoSource));
     }
 
     [HttpGet]
@@ -128,7 +142,7 @@ public sealed class RunsController : ControllerBase
         }
 
         await handle.CompleteAsync(cancellationToken);
-        return Ok(new RunStatusResponse(run.Id, run.Status, phase));
+        return Ok(new RunStatusResponse(run.Id, run.Status, phase, run.Modality, run.VideoSource));
     }
 
     [HttpGet("{id:guid}/trace")]

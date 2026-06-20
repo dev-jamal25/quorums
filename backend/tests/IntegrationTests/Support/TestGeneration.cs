@@ -37,13 +37,16 @@ internal static class TestGeneration
         IEnumerable<string>? failTools = null,
         IEnumerable<string>? flakyTools = null,
         decimal globalCeilingUsd = 1.00m,
-        ITrace? trace = null)
+        ITrace? trace = null,
+        VeoOperationStore? veoStore = null,
+        decimal videoPricePerSec = 0.10m,
+        int maxVideoDurationSec = 5)
     {
         var chat = new DeterministicGenerationChatClient(failTools, flakyTools);
         return new GenerationAgentDeps(
             Generator: new ForcedToolGenerator(chat),
             Retrieval: retrieval ?? new FakeRetrievalService(),
-            Media: media ?? new Backend.Infrastructure.Integrations.Gemini.DeterministicMediaGenerationTool(),
+            Media: media ?? new DeterministicMediaGenerationTool(),
             Storage: storage ?? new InMemoryStorageService(),
             Constraints: Constraints(),
             Prices: Prices(),
@@ -51,7 +54,10 @@ internal static class TestGeneration
             SonnetModel: SonnetModel,
             HaikuModel: HaikuModel,
             Trace: trace ?? new LocalTraceRecorder(),
-            LoggerFactory: NullLoggerFactory.Instance);
+            LoggerFactory: NullLoggerFactory.Instance,
+            VeoStore: veoStore ?? new VeoOperationStore(),
+            VideoPricePerSec: videoPricePerSec,
+            MaxVideoDurationSec: maxVideoDurationSec);
     }
 
     /// <summary>
@@ -80,7 +86,8 @@ internal static class TestGeneration
             SonnetModel: SonnetModel,
             HaikuModel: HaikuModel,
             Trace: new LocalTraceRecorder(),
-            LoggerFactory: NullLoggerFactory.Instance);
+            LoggerFactory: NullLoggerFactory.Instance,
+            VeoStore: new VeoOperationStore());
         return (deps, chat);
     }
 
@@ -134,7 +141,9 @@ internal static class TestGeneration
         Guid brandId,
         IReadOnlyList<string>? pillars = null,
         string surface = "instagram_feed",
-        Budget? budget = null) =>
+        Budget? budget = null,
+        string modality = "image",
+        VideoSource videoSource = VideoSource.ImageSeed) =>
         new(
             RunId: runId,
             BrandId: brandId,
@@ -153,5 +162,25 @@ internal static class TestGeneration
             ContentPillars: pillars ?? ["Origin", "Craft", "Ritual"],
             Candidates: null,
             IncurredCosts: [],
-            FatalError: null);
+            FatalError: null,
+            Modality: modality,
+            VideoSource: videoSource);
+
+    /// <summary>
+    /// Seeds a video run (DL-058): <c>instagram_reel</c> surface (9:16) + the chosen source, plus a media
+    /// budget large enough to cover one Veo clip by default. Pass a tiny <paramref name="budget"/> to force
+    /// the pre-Media video-budget breach.
+    /// </summary>
+    public static RunState VideoSeed(
+        Guid runId,
+        Guid brandId,
+        VideoSource videoSource = VideoSource.ImageSeed,
+        Budget? budget = null) =>
+        Seed(
+            runId,
+            brandId,
+            surface: "instagram_reel",
+            budget: budget ?? new Budget(TokenBudget: 10_000, TokensSpent: 0, MediaBudget: 5.00m, MediaSpent: 0m),
+            modality: "video",
+            videoSource: videoSource);
 }

@@ -3,6 +3,7 @@ using Backend.Core.Domain;
 using Backend.Core.Integrations;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
+using Backend.Core.Orchestration.Contracts;
 using Backend.Infrastructure.Configuration.Secrets;
 using Backend.Infrastructure.Integrations.Meta;
 using Backend.Infrastructure.Jobs;
@@ -63,7 +64,11 @@ public sealed class DurabilityFixture : IAsyncLifetime
         await db.SaveChangesAsync();
     }
 
-    public async Task<Guid> SeedAgentRunAsync(Guid brandId, RunStatus status = RunStatus.Queued)
+    public async Task<Guid> SeedAgentRunAsync(
+        Guid brandId,
+        RunStatus status = RunStatus.Queued,
+        Modality modality = Modality.Image,
+        VideoSource? videoSource = null)
     {
         await using var db = CreateDbContext(SuperuserConnectionString);
         var run = new AgentRun
@@ -71,6 +76,8 @@ public sealed class DurabilityFixture : IAsyncLifetime
             Id = Guid.NewGuid(),
             BrandId = brandId,
             Status = status,
+            Modality = modality,
+            VideoSource = videoSource,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         };

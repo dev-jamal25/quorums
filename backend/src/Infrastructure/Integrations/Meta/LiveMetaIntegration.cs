@@ -63,15 +63,38 @@ public sealed class LiveMetaIntegration : IMetaIntegration
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Branch on (channel, modality) — DL-058 adds the video surfaces (IG Reel, FB Page video) to the
+        // image surfaces. A video run maps to PostSurface.Reel for both channels (DL-030); the image path
+        // is unchanged. IG video is the SAME container/poll/publish shape as IG image (just media_type +
+        // video_url), so only create differs; FB video uses /videos (file_url) + a processing poll.
         var version = _options.GraphApiVersion;
-        var (path, form) = request.Channel switch
+        var isVideo = request.Surface.IsVideo();
+        var (path, form) = (request.Channel, isVideo) switch
         {
-            PublishChannel.Instagram => (
+            (PublishChannel.Instagram, false) => (
                 $"{version}/{request.TargetId}/media",
                 new Dictionary<string, string> { ["image_url"] = request.MediaUrl, ["caption"] = request.Caption }),
-            PublishChannel.FacebookPage => (
+            (PublishChannel.Instagram, true) => (
+                $"{version}/{request.TargetId}/media",
+                new Dictionary<string, string>
+                {
+                    ["media_type"] = "REELS",
+                    ["video_url"] = request.MediaUrl,
+                    ["caption"] = request.Caption,
+                }),
+            (PublishChannel.FacebookPage, false) => (
                 $"{version}/{request.TargetId}/photos",
                 new Dictionary<string, string> { ["url"] = request.MediaUrl, ["published"] = "false" }),
+            (PublishChannel.FacebookPage, true) => (
+                $"{version}/{request.TargetId}/videos",
+                new Dictionary<string, string>
+                {
+                    ["file_url"] = request.MediaUrl,
+                    ["description"] = request.Caption,
+                    // No published=false: /videos posts the Page video itself (default published). It is NOT
+                    // an unpublished container to attach to /feed (that's photos). The returned video id is
+                    // committed as the CreationId; poll status → publish step is a no-op (DL-058).
+                }),
             _ => throw new ArgumentOutOfRangeException(nameof(request), request.Channel, "Unknown channel."),
         };
 
@@ -86,7 +109,8 @@ public sealed class LiveMetaIntegration : IMetaIntegration
             }
 
             // Capture what poll/publish will need (the signatures carry only channel + creationId).
-            _contexts.Set(id, new LivePublishContext(request.Channel, request.TargetId, request.AccessToken, request.Caption));
+            _contexts.Set(id, new LivePublishContext(
+                request.Channel, request.TargetId, request.AccessToken, request.Caption, request.Surface));
             return new ContainerResult(id, null, null);
         }
         catch (Exception ex) when (IsTransient(ex))
@@ -97,20 +121,61 @@ public sealed class LiveMetaIntegration : IMetaIntegration
 
     public async Task<ContainerStatus> PollContainerAsync(PublishChannel channel, string creationId, CancellationToken cancellationToken = default)
     {
-        // Facebook unpublished photos need no processing poll — immediate-ready.
-        if (channel == PublishChannel.FacebookPage)
+        var hasContext = _contexts.TryGet(creationId, out var context);
+        var isVideo = hasContext && context.Surface.IsVideo();
+
+        // FB photo is immediate-ready and needs no context (preserves cross-process behavior).
+        if (channel == PublishChannel.FacebookPage && !isVideo)
         {
             return new ContainerStatus(true, null, null);
         }
 
-        if (!_contexts.TryGet(creationId, out var context))
+        // IG (image or reel) and FB video all need the recovered token from the singleton context.
+        if (!hasContext)
         {
             return new ContainerStatus(false, PublishStatus.TransientFailure, ContextMissing);
         }
 
+        // VIDEO (IG reel / FB video): transcoding takes minutes — far longer than the Hangfire retry
+        // budget. The post already exists on Meta's side once create ran, so poll GENEROUSLY in-call until
+        // ready (up to Meta:VideoPollTimeout) and record the outcome accurately, instead of giving up early
+        // and marking a live post Failed (DL-058 — the "generous bounded poll"). Image polls once.
+        if (isVideo)
+        {
+            var deadline = DateTimeOffset.UtcNow + _options.VideoPollTimeout;
+            while (true)
+            {
+                var status = await PollOnceAsync(channel, creationId, context, cancellationToken).ConfigureAwait(false);
+                if (status.Processed || status.Failure == PublishStatus.TerminalFailure)
+                {
+                    return status;
+                }
+
+                var remaining = deadline - DateTimeOffset.UtcNow;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    return status; // generous bound hit, still processing → transient (a Hangfire retry re-enters)
+                }
+
+                var wait = _options.VideoPollInterval < remaining ? _options.VideoPollInterval : remaining;
+                await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        // IG IMAGE: a single status_code poll (image processing is fast; the Hangfire budget suffices).
+        return await PollOnceAsync(channel, creationId, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    // One poll of the container's processing status — FB reads status.video_status, IG reads status_code.
+    // Only an explicit error state is terminal; ready/FINISHED is processed; ANY other (in-progress or
+    // unfamiliar) value is transient so the video loop keeps waiting rather than false-failing a live post.
+    private async Task<ContainerStatus> PollOnceAsync(
+        PublishChannel channel, string creationId, LivePublishContext context, CancellationToken cancellationToken)
+    {
         try
         {
-            using var message = BuildGet($"{_options.GraphApiVersion}/{creationId}?fields=status_code", context.Token);
+            var fields = channel == PublishChannel.FacebookPage ? "status" : "status_code";
+            using var message = BuildGet($"{_options.GraphApiVersion}/{creationId}?fields={fields}", context.Token);
             using var response = await _http.SendAsync(message, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
@@ -118,13 +183,25 @@ public sealed class LiveMetaIntegration : IMetaIntegration
                 return new ContainerStatus(false, failure, error);
             }
 
-            var status = await response.Content
+            if (channel == PublishChannel.FacebookPage)
+            {
+                var fb = await response.Content
+                    .ReadFromJsonAsync<VideoStatusResponse>(_json, cancellationToken).ConfigureAwait(false);
+                return fb?.Status?.VideoStatus switch
+                {
+                    "ready" => new ContainerStatus(true, null, null),
+                    "error" => new ContainerStatus(false, PublishStatus.TerminalFailure, "FB video processing failed."),
+                    _ => new ContainerStatus(false, PublishStatus.TransientFailure, $"FB video processing ({fb?.Status?.VideoStatus ?? "pending"})."),
+                };
+            }
+
+            var ig = await response.Content
                 .ReadFromJsonAsync<ContainerStatusResponse>(_json, cancellationToken).ConfigureAwait(false);
-            return status?.StatusCode switch
+            return ig?.StatusCode switch
             {
                 "FINISHED" => new ContainerStatus(true, null, null),
-                "IN_PROGRESS" => new ContainerStatus(false, PublishStatus.TransientFailure, "Container still processing."),
-                _ => new ContainerStatus(false, PublishStatus.TerminalFailure, $"Container status_code={status?.StatusCode}."),
+                "ERROR" or "EXPIRED" => new ContainerStatus(false, PublishStatus.TerminalFailure, $"Container status_code={ig?.StatusCode}."),
+                _ => new ContainerStatus(false, PublishStatus.TransientFailure, $"Container processing ({ig?.StatusCode ?? "pending"})."),
             };
         }
         catch (Exception ex) when (IsTransient(ex))
@@ -140,12 +217,24 @@ public sealed class LiveMetaIntegration : IMetaIntegration
             return new PublishResult(PublishStatus.TerminalFailure, null, ContextMissing, null);
         }
 
+        // FB VIDEO is ALREADY posted by POST /{page-id}/videos at the create step — a Page video is its own
+        // post type, NOT an unpublished container you attach to /feed via media_fbid like a photo (DL-058,
+        // live-confirmed: /feed attach works for FB images but not videos). So the publish step is a no-op
+        // that finalizes with the committed video id. (The create-window double-post is the documented
+        // deferred debt; a crash-in-publish-window retry now re-enters here and is a clean no-op.)
+        if (channel == PublishChannel.FacebookPage && context.Surface.IsVideo())
+        {
+            return new PublishResult(PublishStatus.Published, creationId, null, new EngagementKeys(creationId, null));
+        }
+
+        // IG publishes the committed container (image feed OR reel) via media_publish; FB PHOTO attaches the
+        // committed unpublished photo (media_fbid) to a feed post. For IMAGE, re-publishing a committed
+        // creation id is server-side deduped by Meta (DL-042), so a crash-in-publish-window retry recovers
+        // the same id rather than posting twice. (IG reel re-media_publish errors — inherited deferred debt.
+        // Validated by the live smoke — CI never makes this call.)
         var version = _options.GraphApiVersion;
         var (path, form) = channel switch
         {
-            // Re-publishing a committed creation id is server-side deduped by Meta (DL-042): it returns
-            // the same media/post id, so the retry recovers the existing ExternalRef rather than posting
-            // twice. (Validated by the live smoke — CI never makes this call.)
             PublishChannel.Instagram => (
                 $"{version}/{context.TargetId}/media_publish",
                 new Dictionary<string, string> { ["creation_id"] = creationId }),
@@ -252,6 +341,13 @@ public sealed class LiveMetaIntegration : IMetaIntegration
 
     private sealed record ContainerStatusResponse(
         [property: JsonPropertyName("status_code")] string? StatusCode);
+
+    // FB Page video processing status: GET /{video-id}?fields=status → { "status": { "video_status": ... } }.
+    private sealed record VideoStatusResponse(
+        [property: JsonPropertyName("status")] FbVideoStatus? Status);
+
+    private sealed record FbVideoStatus(
+        [property: JsonPropertyName("video_status")] string? VideoStatus);
 
     private sealed record GraphErrorEnvelope(
         [property: JsonPropertyName("error")] GraphError? Error);

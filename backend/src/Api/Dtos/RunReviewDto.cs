@@ -17,6 +17,8 @@ public sealed record RunReviewDto(
     Guid RunId,
     RunStatus Status,
     PostSurface Surface,
+    Modality Modality,
+    VideoSource? VideoSource,
     string? ImageUrl,
     string Caption,
     IReadOnlyList<string> Hashtags,

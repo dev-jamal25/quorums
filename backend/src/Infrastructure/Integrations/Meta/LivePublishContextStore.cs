@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Backend.Core.Domain;
+using Backend.Core.Integrations;
 
 namespace Backend.Infrastructure.Integrations.Meta;
 
@@ -24,5 +25,8 @@ public sealed class LivePublishContextStore
         _contexts.TryGetValue(creationId, out context);
 }
 
-/// <summary>The publish state poll/publish need but their <c>(channel, creationId)</c> signatures omit.</summary>
-public readonly record struct LivePublishContext(PublishChannel Channel, string TargetId, string Token, string Caption);
+/// <summary>The publish state poll/publish need but their <c>(channel, creationId)</c> signatures omit.
+/// <paramref name="Surface"/> (DL-058) lets the poll step pick the FB-video processing poll vs the
+/// immediate-ready FB photo.</summary>
+public readonly record struct LivePublishContext(
+    PublishChannel Channel, string TargetId, string Token, string Caption, PostSurface Surface);
