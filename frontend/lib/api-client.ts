@@ -6,6 +6,7 @@
 import type {
   ApprovalRequest,
   CancelRequest,
+  CreateRunRequest,
   CreateRunResponse,
   RunReviewDto,
   RunStatusResponse,
@@ -61,9 +62,19 @@ async function safeError(response: Response): Promise<string> {
   }
 }
 
-/** Triggers a new run (enqueues the durable job, returns the run id). */
-export function createRun(brandId: string): Promise<CreateRunResponse> {
-  return request<CreateRunResponse>("runs", brandId, { method: "POST" });
+/**
+ * Triggers a new run (enqueues the durable job, returns the run id + resolved modality). Omit
+ * <c>request</c> (or pass an Image modality) for an image run — the backend defaults to image when the
+ * body is absent (DL-058). A video run sends `{ modality: "Video", videoSource: "ImageSeed" }`.
+ */
+export function createRun(
+  brandId: string,
+  options?: CreateRunRequest,
+): Promise<CreateRunResponse> {
+  return request<CreateRunResponse>("runs", brandId, {
+    method: "POST",
+    ...(options ? { body: JSON.stringify(options) } : {}),
+  });
 }
 
 /** Lists the brand's runs (newest first) for the dashboard. */
