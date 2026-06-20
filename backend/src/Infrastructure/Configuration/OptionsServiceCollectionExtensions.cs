@@ -37,6 +37,10 @@ public static class OptionsServiceCollectionExtensions
         services.AddValidatedOptions<GenerationOptions>(configuration, GenerationOptions.SectionName);
         services.AddValidatedOptions<CostPricesOptions>(configuration, CostPricesOptions.SectionName);
         services.AddValidatedOptions<PlatformConstraintsOptions>(configuration, PlatformConstraintsOptions.SectionName);
+        // Veo video generation (DL-058): all optional-with-defaults, so an absent Veo/Media section
+        // never crashes startup or breaks image runs (the image path reads neither).
+        services.AddValidatedOptions<VeoOptions>(configuration, VeoOptions.SectionName);
+        services.AddValidatedOptions<MediaOptions>(configuration, MediaOptions.SectionName);
         // Phase-9 LLM-judge tier (DL-057): the config-bound pass threshold for the κ gate.
         services.AddValidatedOptions<JudgeOptions>(configuration, JudgeOptions.SectionName);
         // Langfuse keys are optional (empty = no-op local tracing); no [Required], so

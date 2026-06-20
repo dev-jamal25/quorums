@@ -156,6 +156,7 @@ public sealed class MinioStorage : IStorageService
             ".jpg" or ".jpeg" => "image/jpeg",
             ".webp" => "image/webp",
             ".gif" => "image/gif",
+            ".mp4" => "video/mp4", // DL-058: video assets store as mp4; the fallback must not be image-only
             _ => "application/octet-stream",
         };
 

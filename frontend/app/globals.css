@@ -322,6 +322,13 @@ h3 {
   font-size: 14px;
 }
 
+/* A video post is a 9:16 reel (DL-058): show the whole frame at its true ratio, not cropped to 4:5. */
+.post-image--video {
+  aspect-ratio: 9 / 16;
+  object-fit: contain;
+  background: #000;
+}
+
 .caption {
   white-space: pre-wrap;
   font-size: 15px;

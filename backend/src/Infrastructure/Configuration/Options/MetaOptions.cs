@@ -26,4 +26,15 @@ public sealed class MetaOptions
 
     /// <summary>Bounded in-call transient/429 retries for the live Graph client's Polly retry policy.</summary>
     public int MaxRetries { get; init; } = 3;
+
+    /// <summary>
+    /// Generous in-call bound for the VIDEO processing poll (DL-058). Reel/Page-video transcoding takes
+    /// minutes — far longer than the Hangfire retry budget — so the poll loops here until the container is
+    /// ready, up to this timeout, instead of giving up and marking a successful post as Failed. Images are
+    /// unaffected (they poll once). Override via <c>Meta__VideoPollTimeout</c> if Meta is slow.
+    /// </summary>
+    public TimeSpan VideoPollTimeout { get; init; } = TimeSpan.FromMinutes(8);
+
+    /// <summary>Delay between video processing polls.</summary>
+    public TimeSpan VideoPollInterval { get; init; } = TimeSpan.FromSeconds(10);
 }

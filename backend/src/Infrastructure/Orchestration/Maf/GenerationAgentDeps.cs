@@ -5,6 +5,7 @@ using Backend.Core.Integrations;
 using Backend.Core.Knowledge;
 using Backend.Core.Orchestration;
 using Backend.Core.Storage;
+using Backend.Infrastructure.Integrations.Gemini;
 using Microsoft.Extensions.Logging;
 
 namespace Backend.Infrastructure.Orchestration.Maf;
@@ -28,4 +29,7 @@ public sealed record GenerationAgentDeps(
     string SonnetModel,
     string HaikuModel,
     ITrace Trace,
-    ILoggerFactory LoggerFactory);
+    ILoggerFactory LoggerFactory,
+    VeoOperationStore VeoStore,
+    decimal VideoPricePerSec = 0m,
+    int MaxVideoDurationSec = 5);

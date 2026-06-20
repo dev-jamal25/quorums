@@ -81,6 +81,22 @@ public static class PlatformConstraintValidator
         return brief with { AspectRatio = constraints.CanonicalAspectRatio };
     }
 
+    // -- modality + duration: pre-enforced (stamp), never model-chosen (DL-058) -----------------
+
+    /// <summary>
+    /// Stamps the run's modality (<c>image</c>/<c>video</c>) and, for video, the clip duration onto the
+    /// brief — overriding any model value (R8, DL-058), just like the aspect-ratio stamp. The Media node
+    /// branches its budget gate and generation on <see cref="MediaPromptBrief.Modality"/>; these are run
+    /// inputs, not creative decisions, so the model never picks them.
+    /// </summary>
+    public static MediaPromptBrief StampVideoFields(MediaPromptBrief brief, string modality, int? durationSec)
+    {
+        ArgumentNullException.ThrowIfNull(brief);
+        ArgumentException.ThrowIfNullOrWhiteSpace(modality);
+
+        return brief with { Modality = modality, DurationSec = durationSec };
+    }
+
     /// <summary>Aspect-ratio check for the publish-time re-check (catches edits made at the human gate).</summary>
     public static ValidationResult ValidateAspectRatio(string aspectRatio, SurfaceConstraints constraints)
     {

@@ -58,6 +58,9 @@ public sealed class AppDbContext : DbContext
 
         // Enums persist as text, not magic ints, so the database stays self-describing.
         modelBuilder.Entity<AgentRun>().Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
+        // Per-run modality selection (DL-058): text enums like Status. VideoSource is nullable (image runs).
+        modelBuilder.Entity<AgentRun>().Property(e => e.Modality).HasConversion<string>().HasMaxLength(16);
+        modelBuilder.Entity<AgentRun>().Property(e => e.VideoSource).HasConversion<string>().HasMaxLength(16);
         modelBuilder.Entity<ContentItem>().Property(e => e.Status).HasConversion<string>().HasMaxLength(32);
         modelBuilder.Entity<ApprovalAction>().Property(e => e.Action).HasConversion<string>().HasMaxLength(32);
 

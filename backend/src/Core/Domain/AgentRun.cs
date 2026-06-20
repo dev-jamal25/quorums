@@ -1,3 +1,5 @@
+using Backend.Core.Orchestration.Contracts;
+
 namespace Backend.Core.Domain;
 
 /// <summary>
@@ -12,6 +14,19 @@ public sealed class AgentRun : IBrandScoped
     public Guid BrandId { get; set; }
 
     public RunStatus Status { get; set; }
+
+    /// <summary>
+    /// The per-run content modality (DL-058 Decision 1), chosen on <c>POST /runs</c> and read by
+    /// <c>ExecuteRun</c> into <c>RunState</c>. Persisted here — NOT in the Hangfire payload — so a retry
+    /// rebuilds the same modality through Postgres (DL-006). Defaults to <see cref="Modality.Image"/>.
+    /// </summary>
+    public Modality Modality { get; set; } = Modality.Image;
+
+    /// <summary>
+    /// The video source for a <see cref="Modality.Video"/> run (DL-058): image-seed (default) vs
+    /// text-to-video. Null for an image run.
+    /// </summary>
+    public VideoSource? VideoSource { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
 

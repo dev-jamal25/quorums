@@ -17,6 +17,9 @@ namespace Backend.Core.Orchestration;
 ///   <item><c>IncurredCosts</c> — per-node cost reports, reconciled into <c>Budget</c> at the join (R3).</item>
 ///   <item><c>FatalError</c> — set by a fatally-failing node (Strategist/CD/selection exhaustion,
 ///   global-ceiling, Gemini-fail): the job fails the run; downstream nodes short-circuit (DL-022/023).</item>
+///   <item><c>Modality</c> — <c>image</c> (default) or <c>video</c>: the CD stamps it onto the brief and
+///   the Media node branches the budget + generation on it (DL-058).</item>
+///   <item><c>VideoSource</c> — for a video run, image-seed (default) vs text-to-video (DL-058).</item>
 /// </list>
 /// </summary>
 public sealed record RunState(
@@ -37,4 +40,6 @@ public sealed record RunState(
     IReadOnlyList<string> ContentPillars,
     StrategyCandidates? Candidates,
     List<NodeCost> IncurredCosts,
-    ToolError? FatalError);
+    ToolError? FatalError,
+    string Modality = "image",
+    VideoSource VideoSource = VideoSource.ImageSeed);

@@ -62,6 +62,11 @@ public static class GenerationServiceCollectionExtensions
         services.AddSingleton(sp =>
             sp.GetRequiredService<IOptions<CostPricesOptions>>().Value.ToCostPrices());
 
+        // The in-flight Veo operation store (DL-058) is registered ALWAYS — a plain in-memory singleton
+        // with no external deps, harmless for image runs. It is what makes the video async core
+        // submit-or-resume idempotent (mirrors the publish-side LivePublishContextStore).
+        services.AddSingleton<VeoOperationStore>();
+
         // Media seam (DL-001): mock = fixed image for CI/compose; live = the real Gemini image client
         // (typed HttpClient + transient/429 retry). CI runs mock only, so no live call is ever made.
         var geminiMode = (configuration["Gemini:Mode"] ?? "mock").Trim().ToLowerInvariant();
@@ -85,6 +90,26 @@ public static class GenerationServiceCollectionExtensions
             services.AddSingleton<IMediaGenerationTool, DeterministicMediaGenerationTool>();
         }
 
+        // Veo video seam (DL-058): the real LiveVeoClient (+ the submit-or-resume VeoVideoGenerator the
+        // live media tool delegates to) is wired ONLY when Veo:Mode=live, reusing the SAME Gemini api key.
+        // Absent/disabled Veo never registers a client, never crashes startup, and never breaks image runs.
+        var veo = configuration.GetSection(VeoOptions.SectionName).Get<VeoOptions>() ?? new VeoOptions();
+        if (veo.IsLive)
+        {
+            var gemini = configuration.GetSection(GeminiOptions.SectionName).Get<GeminiOptions>() ?? new GeminiOptions();
+            services
+                .AddHttpClient<IVeoClient, LiveVeoClient>((sp, client) =>
+                {
+                    var options = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
+                    client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+                    client.DefaultRequestHeaders.Add("x-goog-api-key", options.ApiKey);
+                    client.Timeout = System.Threading.Timeout.InfiniteTimeSpan; // Polly owns the per-attempt timeout
+                })
+                .AddPolicyHandler(GeminiRetryPolicy(gemini.MaxRetries))
+                .AddPolicyHandler(GeminiTimeoutPolicy(gemini.TimeoutSeconds));
+            services.AddTransient<VeoVideoGenerator>();
+        }
+
         // The agent dependency bundle (scoped — carries the scoped, brand-bound IRetrievalService).
         services.AddScoped(sp => new GenerationAgentDeps(
             Generator: sp.GetRequiredService<IStructuredGenerator>(),
@@ -97,7 +122,10 @@ public static class GenerationServiceCollectionExtensions
             SonnetModel: sp.GetRequiredService<IOptions<GenerationOptions>>().Value.SonnetModel,
             HaikuModel: sp.GetRequiredService<IOptions<GenerationOptions>>().Value.HaikuModel,
             Trace: sp.GetRequiredService<ITrace>(),
-            LoggerFactory: sp.GetRequiredService<ILoggerFactory>()));
+            LoggerFactory: sp.GetRequiredService<ILoggerFactory>(),
+            VeoStore: sp.GetRequiredService<VeoOperationStore>(),
+            VideoPricePerSec: sp.GetRequiredService<IOptions<MediaOptions>>().Value.VideoPricePerSec,
+            MaxVideoDurationSec: sp.GetRequiredService<IOptions<VeoOptions>>().Value.MaxDurationSec));
 
         return services;
     }

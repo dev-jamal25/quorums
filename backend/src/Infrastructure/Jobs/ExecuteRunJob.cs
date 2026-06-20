@@ -2,6 +2,7 @@ using System.Text.Json;
 using Backend.Core.Domain;
 using Backend.Core.Multitenancy;
 using Backend.Core.Orchestration;
+using Backend.Core.Orchestration.Contracts;
 using Backend.Infrastructure.Persistence;
 using Backend.Infrastructure.Tracing;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +64,14 @@ public sealed class ExecuteRunJob
         var profile = await _db.BrandProfiles.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         IReadOnlyList<string> pillars = profile?.ContentPillars ?? [];
 
+        // Per-run modality (DL-058 Decision 1) is read from the persisted AgentRun row — NOT the job
+        // payload (DL-006) — so a retry rebuilds the same modality. A video run targets the reel surface
+        // (9:16, DL-030); image runs stay on the feed surface, exactly as before.
+        var isVideo = run.Modality == Modality.Video;
+        var modality = isVideo ? "video" : "image";
+        var surface = isVideo ? "instagram_reel" : "instagram_feed";
+        var videoSource = run.VideoSource ?? VideoSource.ImageSeed;
+
         var state = new RunState(
             RunId: runId,
             BrandId: brandId,
@@ -74,14 +83,19 @@ public sealed class ExecuteRunJob
             Draft: null,
             Approval: null,
             Publish: null,
-            Budget: new Budget(TokenBudget: 10_000, TokensSpent: 0, MediaBudget: 1.00m, MediaSpent: 0m),
+            // Flat per-run media budget provision (the existing image seed): a video run needs headroom
+            // over a paid Veo clip (Media:VideoPricePerSec × duration), so it gets a larger flat budget.
+            // The per-second PRICE stays config-bound (DL-029); this is only the gate's spend ceiling.
+            Budget: new Budget(TokenBudget: 10_000, TokensSpent: 0, MediaBudget: isVideo ? 5.00m : 1.00m, MediaSpent: 0m),
             Errors: [],
             Trace: new TraceRefs(TraceId: string.Empty, SpanIds: [], Spans: []),
-            TargetSurface: "instagram_feed",
+            TargetSurface: surface,
             ContentPillars: pillars,
             Candidates: null,
             IncurredCosts: [],
-            FatalError: null);
+            FatalError: null,
+            Modality: modality,
+            VideoSource: videoSource);
 
         state = await _orchestrator.RunGenerationAsync(state, cancellationToken);
 

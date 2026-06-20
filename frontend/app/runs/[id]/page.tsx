@@ -7,7 +7,7 @@ import { useBrand } from "@/components/brand-context";
 import { StatusBadge } from "@/components/status-badge";
 import { ApiError, getReview } from "@/lib/api-client";
 import type { RunReviewDto } from "@/lib/api-types";
-import { PostImage } from "./post-image";
+import { PostMedia } from "./post-media";
 import { DecisionPanel } from "./decision-panel";
 
 // Statuses where the worker is mid-flight, so the screen polls to catch the outcome (a regenerate
@@ -64,16 +64,17 @@ export default function RunReviewPage() {
         <>
           {review.budgetDegraded && (
             <div className="banner banner--warn">
-              {review.budgetDegradedReason ?? "This run degraded to caption-only to stay within budget."}
+              {review.budgetDegradedReason ?? "This run was published caption-only."}
             </div>
           )}
 
           <div className="grid-2">
             {/* Left: the content the reviewer is approving. */}
             <div className="stack">
-              <PostImage
+              <PostMedia
                 brandId={brandId}
                 runId={runId}
+                modality={review.modality}
                 degraded={review.budgetDegraded}
                 degradedReason={review.budgetDegradedReason}
               />

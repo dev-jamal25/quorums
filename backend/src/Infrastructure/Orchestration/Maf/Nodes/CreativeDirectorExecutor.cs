@@ -105,11 +105,17 @@ public sealed class CreativeDirectorExecutor : Executor<RunState, RunState>
             _deps.Trace, state.Trace, state.RunId, state.BrandId, "creative",
             claimedChunkIds, provenanceIds, cancellationToken).ConfigureAwait(false);
 
-        // Reconcile grounding (R6), then stamp the aspect ratio from the surface, overriding the model (R8).
+        // Reconcile grounding (R6), then stamp the aspect ratio + modality/duration from the run + surface,
+        // overriding any model value (R8, DL-058). Modality/duration are run inputs, not creative choices.
+        var isVideo = string.Equals(state.Modality, "video", StringComparison.OrdinalIgnoreCase);
+        var stampedBrief = PlatformConstraintValidator.StampVideoFields(
+            PlatformConstraintValidator.StampAspectRatio(outcome.Value.MediaPromptBrief, surface),
+            state.Modality,
+            isVideo ? _deps.MaxVideoDurationSec : null);
         var creative = outcome.Value with
         {
             Grounding = GroundingValidator.Reconcile(outcome.Value.Grounding, provenanceIds),
-            MediaPromptBrief = PlatformConstraintValidator.StampAspectRatio(outcome.Value.MediaPromptBrief, surface),
+            MediaPromptBrief = stampedBrief,
         };
 
         var cost = NodeCostEstimator.ForCall("creative", "creative_director", _deps.Prices);

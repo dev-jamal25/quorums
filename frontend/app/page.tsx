@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { useBrand } from "@/components/brand-context";
 import { StatusBadge } from "@/components/status-badge";
 import { ApiError, createRun, listRuns } from "@/lib/api-client";
-import type { RunSummaryDto } from "@/lib/api-types";
+import type { Modality, RunSummaryDto } from "@/lib/api-types";
+
+const MODALITIES: readonly Modality[] = ["Image", "Video"];
 
 export default function DashboardPage() {
   const { brandId, ready } = useBrand();
@@ -15,6 +17,7 @@ export default function DashboardPage() {
   const [runs, setRuns] = useState<RunSummaryDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [modality, setModality] = useState<Modality>("Image");
 
   const load = useCallback(async () => {
     if (!brandId) {
@@ -45,13 +48,19 @@ export default function DashboardPage() {
     }
     setGenerating(true);
     try {
-      const { runId } = await createRun(brandId);
+      // Video → text-to-video (TextPrompt): Veo renders the brief like Nano Banana does for images, with NO
+      // first-frame image. This key has no image-to-video on any Veo model, so ImageSeed isn't usable here.
+      // Image → no body (backend defaults to an image run).
+      const { runId } = await createRun(
+        brandId,
+        modality === "Video" ? { modality: "Video", videoSource: "TextPrompt" } : undefined,
+      );
       router.push(`/runs/${runId}`);
     } catch (e) {
       setError(e instanceof ApiError ? `${e.status}: ${e.message}` : String(e));
       setGenerating(false);
     }
-  }, [brandId, router]);
+  }, [brandId, modality, router]);
 
   return (
     <main className="page stack">
@@ -60,9 +69,24 @@ export default function DashboardPage() {
           <div className="eyebrow">Dashboard</div>
           <h1>Runs</h1>
         </div>
-        <button className="btn btn--primary" onClick={generate} disabled={!brandId || generating}>
-          {generating ? "Starting…" : "Generate a post"}
-        </button>
+        <div className="row" style={{ gap: 12 }}>
+          <div className="tabs" role="group" aria-label="Content modality">
+            {MODALITIES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`tab ${modality === m ? "tab--active" : ""}`}
+                onClick={() => setModality(m)}
+                disabled={generating}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          <button className="btn btn--primary" onClick={generate} disabled={!brandId || generating}>
+            {generating ? "Starting…" : "Generate a post"}
+          </button>
+        </div>
       </div>
 
       {!brandId && ready && (

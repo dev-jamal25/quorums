@@ -39,6 +39,12 @@ namespace Backend.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("Modality")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("modality");
+
                     b.Property<string>("ScheduledJobId")
                         .HasColumnType("text")
                         .HasColumnName("scheduled_job_id");
@@ -52,6 +58,11 @@ namespace Backend.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
+
+                    b.Property<string>("VideoSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("video_source");
 
                     b.HasKey("Id")
                         .HasName("pk_agent_runs");

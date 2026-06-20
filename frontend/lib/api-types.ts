@@ -25,6 +25,12 @@ export type GraphPhase =
 
 export type PostSurface = "FeedImage" | "FeedVideo" | "Reel" | "Story";
 
+/** Per-run content modality (DL-058). Serialized as the enum name. */
+export type Modality = "Image" | "Video";
+
+/** How a video run feeds Veo (DL-058): image-seed (default) vs text-to-video. Null for an image run. */
+export type VideoSource = "ImageSeed" | "TextPrompt";
+
 export type Confidence = "Low" | "Medium" | "High";
 
 /** The server-computed gate actions (DL-041). The UI renders these verbatim — it never recomputes policy. */
@@ -75,6 +81,8 @@ export interface RunReviewDto {
   runId: string;
   status: RunStatus;
   surface: PostSurface;
+  modality: Modality;
+  videoSource: VideoSource | null;
   imageUrl: string | null;
   caption: string;
   hashtags: string[];
@@ -102,10 +110,20 @@ export interface RunStatusResponse {
   runId: string;
   status: RunStatus;
   phase: GraphPhase | null;
+  modality: Modality;
+  videoSource: VideoSource | null;
+}
+
+/** The optional POST /runs body that selects the modality (DL-058). Omit it (or send Image) for an image run. */
+export interface CreateRunRequest {
+  modality?: Modality | null;
+  videoSource?: VideoSource | null;
 }
 
 export interface CreateRunResponse {
   runId: string;
+  modality: Modality;
+  videoSource: VideoSource | null;
 }
 
 // --- decision request bodies (mirror Backend.Api.Dtos) -------------------------------------------

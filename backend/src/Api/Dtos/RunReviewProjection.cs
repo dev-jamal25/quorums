@@ -45,7 +45,18 @@ public static class RunReviewProjection
         IReadOnlyList<string> hashtags = approving?.EditedHashtags ?? draftHashtags;
 
         var media = state?.Draft?.MediaRef ?? state?.Media;
-        var budgetDegraded = state?.Draft is { MediaRef: null };
+        // Caption-only (no media ref). The DTO field stays named BudgetDegraded for back-compat, but a
+        // caption-only draft has TWO distinct causes (DL-058) and the gate must say which HONESTLY: the
+        // pre-Media budget skip (no tool call) OR a media-generation FAILURE — e.g. a Veo timeout. An image
+        // failure is fatal (no draft), so a media.generation_failed on a caption-only draft is always the
+        // video path. The Media node records both (BudgetDegraded vs VideoDegraded); we read the typed error.
+        var captionOnly = state?.Draft is { MediaRef: null };
+        var mediaError = state?.Errors.FirstOrDefault(e => e.Code == "media.generation_failed");
+        var degradedReason = captionOnly
+            ? mediaError is not null
+                ? $"Video generation failed, so the post was published caption-only: {mediaError.Message}"
+                : "Media generation was skipped to stay within the run's cost ceiling (caption-only, DL-029)."
+            : null;
         var imageUrl = media is not null ? $"runs/{run.Id}/media" : null;
 
         var grounding = state?.Strategy?.Grounding is { } g
@@ -82,12 +93,14 @@ public static class RunReviewProjection
             run.Id,
             run.Status,
             Surface(state?.TargetSurface),
+            run.Modality,
+            run.VideoSource,
             imageUrl,
             caption,
             hashtags,
             grounding,
-            budgetDegraded,
-            budgetDegraded ? "Media generation was skipped to stay within the run's cost ceiling (caption-only, DL-029)." : null,
+            captionOnly,
+            degradedReason,
             budget,
             selectedAngle,
             alternatives,
